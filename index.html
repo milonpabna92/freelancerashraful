@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en" class="scroll-smooth">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Md. Ashraful Islam — Senior Graphic Designer Portfolio</title>
+    <meta name="description" content="Official portfolio of Md. Ashraful Islam, Senior Graphic Designer specializing in brand identity, offset printing setup, digital media, and packaging." />
+    <meta property="og:title" content="Md. Ashraful Islam — Senior Graphic Designer Portfolio" />
+    <meta property="og:description" content="Senior Graphic Designer with 7+ years of expertise in Adobe Illustrator, Photoshop, Pre-Press Offset Printing, Brand Identity, and Digital Media." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,100..900;1,100..900&family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet">
+    <script>
+      // Apply theme before DOM paints to prevent flash
+      try {
+        const theme = localStorage.getItem('ashraful_portfolio_theme');
+        if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      } catch (e) {}
+    </script>
+  </head>
+  <body class="bg-[#FFF9F6] text-[#1F2430] dark:bg-[#121110] dark:text-[#F4F4F6] font-sans antialiased selection:bg-[#FD6F41] selection:text-white transition-colors duration-200">
+    <!-- Hidden form for Netlify form detection at build time -->
+    <form name="contact" data-netlify="true" netlify-honeypot="bot-field" hidden>
+      <input type="text" name="name" />
+      <input type="email" name="email" />
+      <input type="text" name="subject" />
+      <input type="text" name="projectType" />
+      <textarea name="message"></textarea>
+    </form>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
