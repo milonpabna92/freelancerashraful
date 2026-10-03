@@ -1,20 +1,23 @@
 export interface Project {
   id: string;
   title: string;
-  category: 'branding' | 'print' | 'packaging' | 'social' | 'retouching';
+  category: 'branding' | 'print' | 'packaging' | 'social' | 'retouching' | string;
   categoryLabel: string;
-  year: string;
-  client: string;
+  year?: string;
+  client?: string;
   location?: string;
   image: string;
-  summary: string;
-  challenge: string;
-  solution: string;
-  deliverables: string[];
-  tools: string[];
-  colorProfile: 'CMYK (FOGRA39)' | 'RGB (sRGB)' | 'Pantone + CMYK';
+  summary: string; // Project Description (supports Markdown & plain links)
+  linkUrl?: string; // Direct Hyperlink URL (e.g., Behance, Live Demo)
+  linkLabel?: string; // Hyperlink button label (e.g., "View on Behance")
+  challenge?: string;
+  solution?: string;
+  deliverables?: string[];
+  tools?: string[];
+  colorProfile?: string;
   aspectRatio?: 'wide' | 'standard' | 'tall';
   featured?: boolean;
+  createdAt?: string;
 }
 
 export interface Experience {

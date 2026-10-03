@@ -1,20 +1,41 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Project } from '../types';
-import { projects } from '../data/portfolioData';
+import { usePortfolioData } from '../context/PortfolioDataContext';
 import { ProjectLightbox } from './ProjectLightbox';
-import { ArrowUpRight, Eye, Layers } from 'lucide-react';
+import { FormattedDescription } from './FormattedDescription';
+import { ArrowUpRight, Eye, Layers, ExternalLink } from 'lucide-react';
 
 export const ProjectsGallery: React.FC = () => {
+  const { projects } = usePortfolioData();
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
 
-  const categories = [
-    { id: 'all', label: 'All' },
-    { id: 'print', label: 'Signage & Outdoor' },
-    { id: 'branding', label: 'Brand Identity' },
-    { id: 'packaging', label: 'Packaging & Offset' },
-    { id: 'social', label: 'Social Media & Ads' },
-  ];
+  // Dynamically compute category tabs based on all available projects
+  const categories = useMemo(() => {
+    const defaultList = [
+      { id: 'all', label: 'All' },
+      { id: 'print', label: 'Signage & Outdoor' },
+      { id: 'branding', label: 'Brand Identity' },
+      { id: 'packaging', label: 'Packaging & Offset' },
+      { id: 'social', label: 'Social Media & Ads' },
+    ];
+
+    // Find any custom categories added by the user
+    const existingIds = new Set(defaultList.map((c) => c.id));
+    const extraCategories: { id: string; label: string }[] = [];
+
+    projects.forEach((p) => {
+      if (p.category && !existingIds.has(p.category)) {
+        existingIds.add(p.category);
+        extraCategories.push({
+          id: p.category,
+          label: p.categoryLabel || p.category,
+        });
+      }
+    });
+
+    return [...defaultList, ...extraCategories];
+  }, [projects]);
 
   const filteredProjects = activeCategory === 'all'
     ? projects
@@ -32,7 +53,7 @@ export const ProjectsGallery: React.FC = () => {
             My Amazing Works
           </h2>
           <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-2">
-            Selected showcase of commercial signage, luxury packaging, brand systems, and high-conversion social campaigns.
+            Selected showcase of commercial signage, luxury packaging, brand systems, and high-conversion marketing campaigns.
           </p>
 
           {/* Filter Tabs matching reference */}
@@ -56,7 +77,7 @@ export const ProjectsGallery: React.FC = () => {
         {/* Bento Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6">
           {filteredProjects.map((project, index) => {
-            const isWide = project.aspectRatio === 'wide' || index === 0;
+            const isWide = project.aspectRatio === 'wide' || (index === 0 && filteredProjects.length > 2);
             const colSpanClass = isWide ? 'lg:col-span-8' : 'lg:col-span-4';
 
             return (
@@ -87,11 +108,19 @@ export const ProjectsGallery: React.FC = () => {
                   {/* Overlaid Info */}
                   <div className="absolute bottom-4 left-4 right-4 text-white">
                     <div className="flex items-center gap-2 text-xs text-neutral-300 mb-1">
-                      <span className="text-orange-300 font-semibold">{project.categoryLabel}</span>
-                      <span aria-hidden="true">·</span>
-                      <span className="tabular-nums">{project.year}</span>
-                      <span aria-hidden="true">·</span>
-                      <span className="truncate">{project.client}</span>
+                      <span className="text-orange-300 font-semibold">{project.categoryLabel || project.category}</span>
+                      {project.year && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="tabular-nums">{project.year}</span>
+                        </>
+                      )}
+                      {project.client && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="truncate">{project.client}</span>
+                        </>
+                      )}
                     </div>
 
                     <h3 className="text-base sm:text-lg font-black font-['Archivo',sans-serif] leading-snug tracking-tight text-white group-hover:text-orange-200 transition-colors">
@@ -102,18 +131,41 @@ export const ProjectsGallery: React.FC = () => {
 
                 {/* Details Footer */}
                 <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between">
-                  <p className="text-xs sm:text-sm text-neutral-600 dark:text-neutral-400 line-clamp-2 mb-4 leading-relaxed">
-                    {project.summary}
-                  </p>
+                  <div className="text-xs sm:text-sm text-neutral-600 dark:text-neutral-400 line-clamp-2 mb-4 leading-relaxed">
+                    <FormattedDescription text={project.summary} />
+                  </div>
 
                   <div className="pt-3 border-t border-neutral-200/60 dark:border-neutral-800 flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">
-                    <span className="font-medium text-neutral-700 dark:text-neutral-300">
-                      {project.tools.slice(0, 2).join(' · ')}
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-[#FD6F41] font-bold group-hover:underline font-['Archivo',sans-serif]">
-                      <span>View Project</span>
-                      <Eye className="w-3.5 h-3.5" />
-                    </span>
+                    <div className="flex items-center gap-2 truncate">
+                      {project.tools && project.tools.length > 0 ? (
+                        <span className="font-medium text-neutral-700 dark:text-neutral-300 truncate">
+                          {project.tools.slice(0, 2).join(' · ')}
+                        </span>
+                      ) : (
+                        <span className="text-neutral-400">Pre-Press & Design</span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {project.linkUrl && (
+                        <a
+                          href={project.linkUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1 text-[11px] font-bold text-neutral-700 dark:text-neutral-300 hover:text-[#FD6F41] bg-neutral-100 dark:bg-neutral-800 px-2.5 py-1 rounded-full font-['Archivo',sans-serif]"
+                          title="Open external project link"
+                        >
+                          <span>{project.linkLabel || 'Live'}</span>
+                          <ExternalLink className="w-3 h-3 text-[#FD6F41]" />
+                        </a>
+                      )}
+
+                      <span className="inline-flex items-center gap-1 text-[#FD6F41] font-bold group-hover:underline font-['Archivo',sans-serif]">
+                        <span>View</span>
+                        <Eye className="w-3.5 h-3.5" />
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>

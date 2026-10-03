@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { usePortfolioData } from '../context/PortfolioDataContext';
+import { Project } from '../types';
+import { FormattedDescription } from './FormattedDescription';
 import {
   getSupabaseConfig,
   saveSupabaseConfig,
@@ -11,7 +13,7 @@ import {
   X,
   Lock,
   FileText,
-  Image,
+  Image as ImageIcon,
   User,
   Database,
   Upload,
@@ -27,7 +29,14 @@ import {
   KeyRound,
   Eye,
   EyeOff,
-  RotateCcw
+  RotateCcw,
+  Briefcase,
+  Plus,
+  Edit2,
+  ExternalLink,
+  Link as LinkIcon,
+  Layers,
+  Sparkles
 } from 'lucide-react';
 
 interface AdminPanelModalProps {
@@ -40,10 +49,16 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
     personalInfo,
     customPhoto,
     cvFileInfo,
+    projects,
     isDownloading,
     downloadCv,
     uploadCvFile,
     uploadPhotoFile,
+    uploadProjectImage,
+    addProject,
+    updateProject,
+    deleteProject,
+    resetProjects,
     resetPhoto,
     resetCvFile,
     updatePersonalInfo,
@@ -59,7 +74,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
   });
 
   // Active tab state
-  const [activeTab, setActiveTab] = useState<'cv' | 'photo' | 'info' | 'supabase' | 'security'>('cv');
+  const [activeTab, setActiveTab] = useState<'projects' | 'cv' | 'photo' | 'info' | 'security' | 'supabase'>('projects');
 
   // CV & Photo upload status state
   const [uploadStatus, setUploadStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error'; message: string }>({
@@ -106,6 +121,31 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
     type: 'idle',
     text: '',
   });
+
+  // Project Management State
+  const [isProjectFormOpen, setIsProjectFormOpen] = useState(false);
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [projectImageUploading, setProjectImageUploading] = useState(false);
+  const projectImageInputRef = useRef<HTMLInputElement>(null);
+  const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const [projectForm, setProjectForm] = useState({
+    title: '',
+    category: 'print',
+    categoryLabel: 'Signage & Outdoor',
+    year: new Date().getFullYear().toString(),
+    client: '',
+    image: '',
+    summary: '',
+    linkUrl: '',
+    linkLabel: 'View on Behance',
+    tools: 'Adobe Illustrator, Adobe Photoshop',
+  });
+
+  // Hyperlink Helper Modal State for Description
+  const [isLinkHelperOpen, setIsLinkHelperOpen] = useState(false);
+  const [linkInputUrl, setLinkInputUrl] = useState('');
+  const [linkInputText, setLinkInputText] = useState('');
 
   // Refresh stored PIN on modal open
   useEffect(() => {
@@ -223,7 +263,6 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
       localStorage.setItem('ashraful_admin_pin', updatedPin);
     } catch (e) {}
 
-    // Save to Supabase if connected
     const supabaseConfig = getSupabaseConfig();
     if (supabaseConfig.connected) {
       await saveSettingsToSupabase({ adminPin: updatedPin });
@@ -257,6 +296,192 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
     setTimeout(() => setPinMessage({ type: 'idle', text: '' }), 4000);
   };
 
+  // -------------------------------------------------------------
+  // Project Management Handlers
+  // -------------------------------------------------------------
+
+  const handleOpenAddProject = () => {
+    setEditingProjectId(null);
+    setProjectForm({
+      title: '',
+      category: 'print',
+      categoryLabel: 'Signage & Outdoor',
+      year: new Date().getFullYear().toString(),
+      client: '',
+      image: '',
+      summary: '',
+      linkUrl: '',
+      linkLabel: 'View on Behance',
+      tools: 'Adobe Illustrator, Adobe Photoshop',
+    });
+    setIsProjectFormOpen(true);
+  };
+
+  const handleOpenEditProject = (proj: Project) => {
+    setEditingProjectId(proj.id);
+    setProjectForm({
+      title: proj.title,
+      category: proj.category || 'print',
+      categoryLabel: proj.categoryLabel || 'Signage & Outdoor',
+      year: proj.year || new Date().getFullYear().toString(),
+      client: proj.client || '',
+      image: proj.image || '',
+      summary: proj.summary || '',
+      linkUrl: proj.linkUrl || '',
+      linkLabel: proj.linkLabel || 'View on Behance',
+      tools: proj.tools ? proj.tools.join(', ') : 'Adobe Illustrator, Adobe Photoshop',
+    });
+    setIsProjectFormOpen(true);
+  };
+
+  const handleProjectImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setProjectImageUploading(true);
+    const res = await uploadProjectImage(file);
+    if (res.success && res.url) {
+      setProjectForm((prev) => ({ ...prev, image: res.url! }));
+    } else {
+      alert(res.error || 'ছবি আপলোড করতে ব্যর্থ হয়েছে।');
+    }
+    setProjectImageUploading(false);
+    if (projectImageInputRef.current) projectImageInputRef.current.value = '';
+  };
+
+  const handleInsertHyperlink = () => {
+    if (!linkInputUrl) {
+      alert('দয়া করে হাইপারলিংকের URL দিন (যেমন: https://behance.net/...)');
+      return;
+    }
+
+    let url = linkInputUrl.trim();
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = `https://${url}`;
+    }
+
+    const label = linkInputText.trim() || 'প্রোজেক্ট লিংক দেখুন';
+    const markdownLink = `[${label}](${url})`;
+
+    // Insert into textarea at current cursor or append
+    const textarea = descriptionTextareaRef.current;
+    if (textarea) {
+      const start = textarea.selectionStart || 0;
+      const end = textarea.selectionEnd || 0;
+      const currentText = projectForm.summary;
+      const updated = currentText.substring(0, start) + markdownLink + currentText.substring(end);
+      setProjectForm({ ...projectForm, summary: updated });
+    } else {
+      setProjectForm((prev) => ({
+        ...prev,
+        summary: prev.summary ? `${prev.summary} ${markdownLink}` : markdownLink,
+      }));
+    }
+
+    setLinkInputUrl('');
+    setLinkInputText('');
+    setIsLinkHelperOpen(false);
+  };
+
+  const handleSaveProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!projectForm.title.trim()) {
+      alert('প্রোজেক্টের শিরোনাম (Title) দিন');
+      return;
+    }
+
+    if (!projectForm.image) {
+      alert('প্রোজেক্টের জন্য একটি ছবি নির্বাচন বা আপলোড করুন');
+      return;
+    }
+
+    // Determine category label
+    let catLabel = projectForm.categoryLabel;
+    if (projectForm.category === 'print') catLabel = 'Signage & Outdoor';
+    else if (projectForm.category === 'branding') catLabel = 'Brand Identity';
+    else if (projectForm.category === 'packaging') catLabel = 'Packaging & Offset';
+    else if (projectForm.category === 'social') catLabel = 'Social Media & Ads';
+    else if (projectForm.category === 'retouching') catLabel = 'Photo Retouching';
+
+    const toolsArray = projectForm.tools
+      ? projectForm.tools.split(',').map((t) => t.trim()).filter(Boolean)
+      : ['Adobe Illustrator', 'Adobe Photoshop'];
+
+    if (editingProjectId) {
+      // Update existing
+      const res = await updateProject(editingProjectId, {
+        title: projectForm.title.trim(),
+        category: projectForm.category,
+        categoryLabel: catLabel,
+        year: projectForm.year.trim(),
+        client: projectForm.client.trim(),
+        image: projectForm.image,
+        summary: projectForm.summary.trim(),
+        linkUrl: projectForm.linkUrl.trim(),
+        linkLabel: projectForm.linkLabel.trim() || 'View Project',
+        tools: toolsArray,
+      });
+
+      if (res.success) {
+        setIsProjectFormOpen(false);
+        setEditingProjectId(null);
+        setUploadStatus({ type: 'success', message: 'প্রোজেক্ট সফলভাবে আপডেট করা হয়েছে!' });
+        setTimeout(() => setUploadStatus({ type: 'idle', message: '' }), 3000);
+      } else {
+        alert(res.error || 'আপডেট করতে ব্যর্থ হয়েছে।');
+      }
+    } else {
+      // Add new
+      const res = await addProject({
+        title: projectForm.title.trim(),
+        category: projectForm.category,
+        categoryLabel: catLabel,
+        year: projectForm.year.trim(),
+        client: projectForm.client.trim() || 'Commercial Client',
+        image: projectForm.image,
+        summary: projectForm.summary.trim() || 'Creative graphic design & pre-press project by Md. Ashraful Islam.',
+        linkUrl: projectForm.linkUrl.trim(),
+        linkLabel: projectForm.linkLabel.trim() || 'View Project',
+        tools: toolsArray,
+        challenge: 'Commercial production challenge addressing brand visibility and print precision.',
+        solution: 'Executed high-precision vector artwork and print calibrations for offset reproduction.',
+        deliverables: ['Production artwork vector file', 'High-res print output', 'Client approval showcase'],
+        colorProfile: 'CMYK (FOGRA39)',
+        aspectRatio: 'standard',
+        featured: true,
+      });
+
+      if (res.success) {
+        setIsProjectFormOpen(false);
+        setUploadStatus({ type: 'success', message: 'নতুন প্রোজেক্ট সফলভাবে আপলোড করা হয়েছে!' });
+        setTimeout(() => setUploadStatus({ type: 'idle', message: '' }), 3000);
+      } else {
+        alert(res.error || 'প্রোজেক্ট যোগ করতে ব্যর্থ হয়েছে।');
+      }
+    }
+  };
+
+  const handleDeleteProject = async (id: string, title: string) => {
+    if (window.confirm(`আপনি কি নিশ্চিত যে "${title}" প্রোজেক্টটি মুছে ফেলতে চান?`)) {
+      const res = await deleteProject(id);
+      if (res.success) {
+        setUploadStatus({ type: 'success', message: `"${title}" প্রোজেক্টটি মুছে ফেলা হয়েছে।` });
+        setTimeout(() => setUploadStatus({ type: 'idle', message: '' }), 3000);
+      } else {
+        alert(res.error || 'মুছে ফেলতে ব্যর্থ হয়েছে।');
+      }
+    }
+  };
+
+  const handleResetToDefaultProjects = async () => {
+    if (window.confirm('আপনি কি নিশ্চিত যে সমস্ত কাস্টম প্রোজেক্ট মুছে ডিফল্ট অরিজিনাল শোকেস প্রোজেক্টগুলোতে ফিরে যেতে চান?')) {
+      await resetProjects();
+      setUploadStatus({ type: 'success', message: 'প্রোজেক্ট তালিকা ডিফল্ট অরিজিনাল শোকেসে রিসেট করা হয়েছে।' });
+      setTimeout(() => setUploadStatus({ type: 'idle', message: '' }), 3000);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-neutral-950/80 backdrop-blur-md overflow-y-auto">
       {/* Hidden file inputs */}
@@ -274,8 +499,15 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
         accept="image/*"
         className="hidden"
       />
+      <input
+        type="file"
+        ref={projectImageInputRef}
+        onChange={handleProjectImageUpload}
+        accept="image/*"
+        className="hidden"
+      />
 
-      <div className="relative w-full max-w-4xl bg-white dark:bg-[#1C1A18] border border-neutral-200 dark:border-neutral-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col my-auto max-h-[92vh]">
+      <div className="relative w-full max-w-5xl bg-white dark:bg-[#1C1A18] border border-neutral-200 dark:border-neutral-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col my-auto max-h-[92vh]">
         {/* Top Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200/80 dark:border-neutral-800 bg-[#FFF9F6] dark:bg-[#141210]">
           <div className="flex items-center gap-2.5">
@@ -287,7 +519,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
                 গোপন অ্যাডমিন কন্ট্রোল প্যানেল (Hidden Admin Panel)
               </h2>
               <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                সিভি পিডিএফ আপলোড, ছবি আপডেট, তথ্য এডিটিং, পিন পরিবর্তন ও সুপাবেস
+                প্রোজেক্ট আপলোড ও ডিলিট, সিভি পিডিএফ, ছবি, তথ্য, পিন পরিবর্তন ও সুপাবেস
               </p>
             </div>
           </div>
@@ -364,6 +596,22 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
           <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
             {/* Sidebar Tabs */}
             <div className="w-full md:w-60 border-b md:border-b-0 md:border-r border-neutral-200/80 dark:border-neutral-800 bg-[#FFF9F6]/60 dark:bg-[#141210]/60 p-3 sm:p-4 flex md:flex-col gap-1.5 overflow-x-auto shrink-0">
+              {/* NEW TAB: My Amazing Works / Projects */}
+              <button
+                onClick={() => {
+                  setActiveTab('projects');
+                  setIsProjectFormOpen(false);
+                }}
+                className={`flex items-center gap-2.5 px-4 py-3 text-xs sm:text-sm font-bold rounded-2xl transition-all whitespace-nowrap cursor-pointer font-['Archivo',sans-serif] ${
+                  activeTab === 'projects'
+                    ? 'bg-[#FD6F41] text-white shadow-md shadow-orange-500/25'
+                    : 'text-neutral-600 dark:text-neutral-400 hover:bg-orange-100/50 dark:hover:bg-neutral-800'
+                }`}
+              >
+                <Briefcase className="w-4 h-4" />
+                <span>প্রোজেক্ট (My Works)</span>
+              </button>
+
               <button
                 onClick={() => setActiveTab('cv')}
                 className={`flex items-center gap-2.5 px-4 py-3 text-xs sm:text-sm font-bold rounded-2xl transition-all whitespace-nowrap cursor-pointer font-['Archivo',sans-serif] ${
@@ -384,7 +632,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
                     : 'text-neutral-600 dark:text-neutral-400 hover:bg-orange-100/50 dark:hover:bg-neutral-800'
                 }`}
               >
-                <Image className="w-4 h-4" />
+                <ImageIcon className="w-4 h-4" />
                 <span>প্রোফাইল ছবি (Photo)</span>
               </button>
 
@@ -455,7 +703,412 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
                 </div>
               )}
 
-              {/* TAB 1: CV PDF UPLOAD & DOWNLOAD */}
+              {/* TAB: PROJECTS (MY AMAZING WORKS) */}
+              {activeTab === 'projects' && (
+                <div className="space-y-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <h3 className="text-lg font-black text-[#111827] dark:text-white font-['Archivo',sans-serif] flex items-center gap-2">
+                        <span>My Amazing Works — প্রোজেক্ট ম্যানেজমেন্ট</span>
+                        <span className="px-2.5 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950/50 text-[#FD6F41] text-xs font-bold font-mono">
+                          {projects.length} টি প্রোজেক্ট
+                        </span>
+                      </h3>
+                      <p className="text-xs sm:text-sm text-neutral-600 dark:text-neutral-400 mt-0.5">
+                        ছবি, হেডিং, ডিসক্রিপশন ও হাইপারলিংক দিয়ে নতুন প্রোজেক্ট আপলোড করুন অথবা ডিলিট করুন।
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {!isProjectFormOpen ? (
+                        <button
+                          type="button"
+                          onClick={handleOpenAddProject}
+                          className="inline-flex items-center gap-1.5 px-5 py-2.5 text-xs font-bold text-white bg-[#FD6F41] hover:bg-[#E55B2F] rounded-full shadow-md shadow-orange-500/20 transition-all cursor-pointer font-['Archivo',sans-serif]"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>নতুন প্রোজেক্ট আপলোড করুন</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setIsProjectFormOpen(false)}
+                          className="px-4 py-2 text-xs font-bold text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-full transition-colors cursor-pointer"
+                        >
+                          বাতিল / বন্ধ করুন
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* PROJECT ADD / EDIT FORM */}
+                  {isProjectFormOpen && (
+                    <form onSubmit={handleSaveProject} className="p-6 rounded-3xl bg-[#FFF9F6] dark:bg-[#141210] border border-orange-200 dark:border-neutral-700 shadow-md space-y-5">
+                      <div className="flex items-center justify-between pb-3 border-b border-orange-100 dark:border-neutral-800">
+                        <h4 className="text-sm sm:text-base font-bold text-[#111827] dark:text-white font-['Archivo',sans-serif] flex items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-[#FD6F41]" />
+                          <span>{editingProjectId ? 'প্রোজেক্ট সম্পাদনা (Edit Project)' : 'নতুন প্রোজেক্ট আপলোড (Add New Project)'}</span>
+                        </h4>
+                        <span className="text-xs text-neutral-500">সব তথ্য ফ্রন্টএন্ডে অবিলম্বে প্রদর্শিত হবে</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* Heading / Title */}
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300 mb-1.5 font-['Archivo',sans-serif]">
+                            প্রোজেক্টের হেডিং / শিরোনাম (Title) <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="যেমন: Metropolitan Architectural Billboard Signage"
+                            value={projectForm.title}
+                            onChange={(e) => setProjectForm({ ...projectForm, title: e.target.value })}
+                            className="w-full px-4 py-2.5 text-xs sm:text-sm rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 font-['Archivo',sans-serif] font-bold focus:outline-none focus:ring-2 focus:ring-[#FD6F41]"
+                          />
+                        </div>
+
+                        {/* Category */}
+                        <div>
+                          <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300 mb-1.5 font-['Archivo',sans-serif]">
+                            ক্যাটাগরি (Category)
+                          </label>
+                          <select
+                            value={projectForm.category}
+                            onChange={(e) => setProjectForm({ ...projectForm, category: e.target.value })}
+                            className="w-full px-4 py-2.5 text-xs sm:text-sm rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-[#FD6F41]"
+                          >
+                            <option value="print">Signage & Outdoor (বিলবোর্ড ও আউটডোর)</option>
+                            <option value="branding">Brand Identity (ব্র্যান্ডিং ও লোগো)</option>
+                            <option value="packaging">Packaging & Offset (প্যাকেজিং ও বক্স)</option>
+                            <option value="social">Social Media & Ads (সোশ্যাল ডিজাইন)</option>
+                            <option value="retouching">Photo Retouching (ফটো এডিটিং)</option>
+                            <option value="other">অন্যান্য / কাস্টম</option>
+                          </select>
+                        </div>
+
+                        {/* Year & Client */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300 mb-1.5 font-['Archivo',sans-serif]">
+                              সাল (Year)
+                            </label>
+                            <input
+                              type="text"
+                              value={projectForm.year}
+                              onChange={(e) => setProjectForm({ ...projectForm, year: e.target.value })}
+                              placeholder="2024"
+                              className="w-full px-3 py-2.5 text-xs rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300 mb-1.5 font-['Archivo',sans-serif]">
+                              ক্লায়েন্ট (Client)
+                            </label>
+                            <input
+                              type="text"
+                              value={projectForm.client}
+                              onChange={(e) => setProjectForm({ ...projectForm, client: e.target.value })}
+                              placeholder="AR Digital Sign"
+                              className="w-full px-3 py-2.5 text-xs rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Image Upload / URL */}
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300 mb-1.5 font-['Archivo',sans-serif]">
+                            প্রোজেক্টের ছবি (Project Image) <span className="text-rose-500">*</span>
+                          </label>
+
+                          <div className="flex flex-col sm:flex-row items-center gap-4 p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700">
+                            {/* Image Preview Box */}
+                            <div className="w-32 h-24 rounded-xl overflow-hidden bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 shrink-0 flex items-center justify-center">
+                              {projectForm.image ? (
+                                <img
+                                  src={projectForm.image}
+                                  alt="Preview"
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <div className="text-center p-2">
+                                  <ImageIcon className="w-6 h-6 text-neutral-400 mx-auto mb-1" />
+                                  <span className="text-[10px] text-neutral-400">ছবি নেই</span>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex-1 w-full space-y-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => projectImageInputRef.current?.click()}
+                                  disabled={projectImageUploading}
+                                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-[#FD6F41] hover:bg-[#E55B2F] rounded-xl shadow-xs transition-colors cursor-pointer font-['Archivo',sans-serif]"
+                                >
+                                  <Upload className="w-3.5 h-3.5" />
+                                  <span>{projectImageUploading ? 'ছবি আপলোড হচ্ছে...' : 'ডিভাইস থেকে ছবি আপলোড করুন'}</span>
+                                </button>
+                                <span className="text-xs text-neutral-400">বা সরাসরি ইমেজ লিংক পেস্ট করুন:</span>
+                              </div>
+
+                              <input
+                                type="url"
+                                placeholder="https://images.unsplash.com/... বা অন্য কোনো ছবির লিংক"
+                                value={projectForm.image.startsWith('data:') ? '(কাস্টম আপলোডকৃত ছবি সংরক্ষিত রয়েছে)' : projectForm.image}
+                                onChange={(e) => setProjectForm({ ...projectForm, image: e.target.value })}
+                                className="w-full px-3 py-1.5 text-xs rounded-lg border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-1 focus:ring-[#FD6F41]"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Description with Hyperlink Toolbar */}
+                        <div className="sm:col-span-2">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300 font-['Archivo',sans-serif]">
+                              প্রোজেক্ট ডিসক্রিপশন (Description) <span className="text-rose-500">*</span>
+                            </label>
+
+                            {/* Hyperlink Helper Trigger */}
+                            <button
+                              type="button"
+                              onClick={() => setIsLinkHelperOpen(true)}
+                              className="inline-flex items-center gap-1 text-xs font-bold text-[#FD6F41] hover:text-[#E55B2F] bg-orange-100 dark:bg-orange-950/60 px-3 py-1 rounded-full cursor-pointer transition-colors"
+                              title="ডিসক্রিপশনে যেকোনো ওয়েবসাইটের ক্লিকযোগ্য হাইপার লিংক যোগ করুন"
+                            >
+                              <LinkIcon className="w-3.5 h-3.5" />
+                              <span>[ 🔗 হাইপার লিংক যোগ করুন ]</span>
+                            </button>
+                          </div>
+
+                          <textarea
+                            ref={descriptionTextareaRef}
+                            required
+                            rows={4}
+                            placeholder="প্রোজেক্টের বিস্তারিত বিবরণ লিখুন। চাইলে লিংক যোগ করতে [লিংকের নাম](https://website.com) লিখতে পারেন..."
+                            value={projectForm.summary}
+                            onChange={(e) => setProjectForm({ ...projectForm, summary: e.target.value })}
+                            className="w-full px-4 py-2.5 text-xs sm:text-sm rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-[#FD6F41] leading-relaxed"
+                          />
+
+                          {/* Live Hyperlink Preview Box */}
+                          {projectForm.summary && (
+                            <div className="mt-2 p-3 rounded-xl bg-orange-50/70 dark:bg-orange-950/30 border border-orange-200/60 dark:border-orange-900/40 text-xs">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-[#FD6F41] block mb-1">
+                                লাইভ প্রিভিউ (ভিজিটরদের যেভাবে লিংক ও লেখা দেখাবে):
+                              </span>
+                              <div className="text-neutral-700 dark:text-neutral-300">
+                                <FormattedDescription text={projectForm.summary} />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Direct Project External Link (Optional) */}
+                        <div>
+                          <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300 mb-1.5 font-['Archivo',sans-serif]">
+                            সরাসরি প্রজেক্ট লিংক (Project Link URL - Optional)
+                          </label>
+                          <input
+                            type="url"
+                            placeholder="https://www.behance.net/gallery/..."
+                            value={projectForm.linkUrl}
+                            onChange={(e) => setProjectForm({ ...projectForm, linkUrl: e.target.value })}
+                            className="w-full px-4 py-2.5 text-xs rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-1 focus:ring-[#FD6F41]"
+                          />
+                        </div>
+
+                        {/* Link Button Label */}
+                        <div>
+                          <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300 mb-1.5 font-['Archivo',sans-serif]">
+                            লিংক বাটনের নাম (Button Label - Optional)
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="যেমন: View on Behance বা Live Website"
+                            value={projectForm.linkLabel}
+                            onChange={(e) => setProjectForm({ ...projectForm, linkLabel: e.target.value })}
+                            className="w-full px-4 py-2.5 text-xs rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-1 focus:ring-[#FD6F41]"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Submit & Cancel Buttons */}
+                      <div className="flex items-center justify-end gap-3 pt-3 border-t border-orange-100 dark:border-neutral-800">
+                        <button
+                          type="button"
+                          onClick={() => setIsProjectFormOpen(false)}
+                          className="px-5 py-2.5 text-xs font-bold text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-800 rounded-full transition-colors cursor-pointer"
+                        >
+                          বাতিল
+                        </button>
+
+                        <button
+                          type="submit"
+                          className="inline-flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white bg-[#FD6F41] hover:bg-[#E55B2F] rounded-full shadow-md shadow-orange-500/25 transition-all cursor-pointer font-['Archivo',sans-serif]"
+                        >
+                          <Save className="w-4 h-4" />
+                          <span>{editingProjectId ? 'আপডেট সংরক্ষণ করুন' : 'প্রোজেক্টটি সেভ ও পাবলিশ করুন'}</span>
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* Hyperlink Inserter Dialog Modal */}
+                  {isLinkHelperOpen && (
+                    <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-neutral-950/70 backdrop-blur-xs">
+                      <div className="bg-white dark:bg-[#1C1A18] border border-neutral-300 dark:border-neutral-700 rounded-2xl p-5 w-full max-w-md shadow-2xl space-y-4">
+                        <div className="flex items-center justify-between pb-2 border-b border-neutral-200 dark:border-neutral-800">
+                          <h4 className="text-sm font-bold text-neutral-900 dark:text-white flex items-center gap-1.5 font-['Archivo',sans-serif]">
+                            <LinkIcon className="w-4 h-4 text-[#FD6F41]" />
+                            <span>হাইপার লিংক যুক্ত করুন</span>
+                          </h4>
+                          <button
+                            onClick={() => setIsLinkHelperOpen(false)}
+                            className="p-1 rounded text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                            ওয়েবসাইট বা প্রজেক্টের লিংক (URL) <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="https://www.behance.net/..."
+                            value={linkInputUrl}
+                            onChange={(e) => setLinkInputUrl(e.target.value)}
+                            autoFocus
+                            className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 font-mono text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-[#FD6F41]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                            ডিসপ্লে টেক্সট / যে লেখায় ক্লিক করবে (Display Text)
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="যেমন: বিহ্যান্স প্রজেক্ট দেখুন"
+                            value={linkInputText}
+                            onChange={(e) => setLinkInputText(e.target.value)}
+                            className="w-full px-3 py-2 text-xs rounded-xl border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-[#FD6F41]"
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsLinkHelperOpen(false)}
+                            className="px-4 py-2 text-xs font-bold text-neutral-500 hover:bg-neutral-100 rounded-xl"
+                          >
+                            বাতিল
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleInsertHyperlink}
+                            className="px-5 py-2 text-xs font-bold text-white bg-[#FD6F41] hover:bg-[#E55B2F] rounded-xl shadow-xs"
+                          >
+                            লিংক ইনসার্ট করুন
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ACTIVE PROJECTS LIST */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between text-xs text-neutral-500 font-semibold px-1">
+                      <span>বর্তমানে ওয়েবসাইটে সক্রিয় সমস্ত প্রোজেক্ট:</span>
+                      <button
+                        type="button"
+                        onClick={handleResetToDefaultProjects}
+                        className="text-neutral-400 hover:text-rose-500 underline cursor-pointer"
+                      >
+                        ডিফল্ট শোকেসে রিসেট করুন
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3">
+                      {projects.map((proj, idx) => (
+                        <div
+                          key={proj.id}
+                          className="p-4 rounded-2xl bg-white dark:bg-[#1E1B18] border border-neutral-200 dark:border-neutral-800 hover:border-orange-300 dark:hover:border-neutral-700 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs"
+                        >
+                          <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+                            {/* Thumbnail */}
+                            <div className="w-18 h-14 rounded-xl overflow-hidden bg-neutral-100 dark:bg-neutral-800 shrink-0 border border-neutral-200 dark:border-neutral-700">
+                              <img
+                                src={proj.image}
+                                alt={proj.title}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 mb-0.5">
+                                <span className="px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950/60 text-[#FD6F41] text-[10px] font-bold">
+                                  {proj.categoryLabel || proj.category}
+                                </span>
+                                {proj.year && (
+                                  <span className="text-[10px] text-neutral-400">· {proj.year}</span>
+                                )}
+                              </div>
+
+                              <h4 className="text-sm font-bold text-[#111827] dark:text-white truncate font-['Archivo',sans-serif]">
+                                {proj.title}
+                              </h4>
+
+                              <div className="text-xs text-neutral-500 dark:text-neutral-400 truncate max-w-lg mt-0.5">
+                                <FormattedDescription text={proj.summary} showIcon={false} />
+                              </div>
+
+                              {proj.linkUrl && (
+                                <a
+                                  href={proj.linkUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-[11px] text-[#FD6F41] hover:underline font-semibold mt-1"
+                                >
+                                  <span>{proj.linkLabel || 'প্রোজেক্ট লিংক'}</span>
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Action Buttons */}
+                          <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditProject(proj)}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-neutral-700 dark:text-neutral-300 bg-neutral-100 dark:bg-neutral-800 hover:bg-orange-100 hover:text-[#FD6F41] rounded-xl transition-colors cursor-pointer"
+                              title="এডিট করুন"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                              <span>এডিট</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteProject(proj.id, proj.title)}
+                              className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors cursor-pointer"
+                              title="প্রোজেক্ট মুছে ফেলুন"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB: CV PDF UPLOAD & DOWNLOAD */}
               {activeTab === 'cv' && (
                 <div className="space-y-6">
                   <div>
@@ -541,7 +1194,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
                 </div>
               )}
 
-              {/* TAB 2: PROFILE PHOTO */}
+              {/* TAB: PROFILE PHOTO */}
               {activeTab === 'photo' && (
                 <div className="space-y-6">
                   <div>
@@ -597,7 +1250,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
                 </div>
               )}
 
-              {/* TAB 3: PERSONAL INFORMATION */}
+              {/* TAB: PERSONAL INFORMATION */}
               {activeTab === 'info' && (
                 <form onSubmit={handleSaveInfo} className="space-y-5">
                   <div className="flex items-center justify-between">
@@ -719,7 +1372,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
                 </form>
               )}
 
-              {/* TAB 4: PIN CHANGE & SECURITY */}
+              {/* TAB: PIN CHANGE & SECURITY */}
               {activeTab === 'security' && (
                 <div className="space-y-6">
                   <div>
@@ -780,7 +1433,6 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
 
                   {/* PIN Change Form */}
                   <form onSubmit={handleChangePin} className="p-6 rounded-2xl bg-white dark:bg-[#1E1B18] border border-neutral-200 dark:border-neutral-800 space-y-4 max-w-lg">
-                    {/* Current PIN */}
                     <div>
                       <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300 mb-1.5 font-['Archivo',sans-serif]">
                         বর্তমান পিন (Current PIN) <span className="text-rose-500">*</span>
@@ -804,7 +1456,6 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
                       </div>
                     </div>
 
-                    {/* New PIN */}
                     <div>
                       <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300 mb-1.5 font-['Archivo',sans-serif]">
                         নতুন পছন্দমতো পিন (New PIN) <span className="text-rose-500">*</span>
@@ -828,7 +1479,6 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
                       </div>
                     </div>
 
-                    {/* Confirm New PIN */}
                     <div>
                       <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300 mb-1.5 font-['Archivo',sans-serif]">
                         নতুন পিন নিশ্চিত করুন (Confirm New PIN) <span className="text-rose-500">*</span>
@@ -865,7 +1515,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
                 </div>
               )}
 
-              {/* TAB 5: SUPABASE CONNECTION */}
+              {/* TAB: SUPABASE CONNECTION */}
               {activeTab === 'supabase' && (
                 <div className="space-y-6">
                   <div>
@@ -877,7 +1527,6 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
                     </p>
                   </div>
 
-                  {/* Supabase inputs */}
                   <div className="p-5 rounded-2xl bg-[#FFF9F6] dark:bg-[#141210] border border-orange-100/80 dark:border-neutral-800 space-y-4">
                     <div>
                       <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300 mb-1 font-['Archivo',sans-serif]">
@@ -905,7 +1554,6 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
                       />
                     </div>
 
-                    {/* Supabase status display */}
                     {supabaseStatus && (
                       <div
                         className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 ${

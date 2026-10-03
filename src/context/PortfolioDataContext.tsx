@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { personalInfo as defaultPersonalInfo } from '../data/portfolioData';
+import { personalInfo as defaultPersonalInfo, projects as defaultProjects } from '../data/portfolioData';
+import { Project } from '../types';
 import { getFile, setFile, deleteFile, triggerDownload } from '../utils/storage';
 import { getSupabaseConfig, uploadFileToSupabase, saveSettingsToSupabase, loadSettingsFromSupabase } from '../lib/supabase';
 
@@ -15,10 +16,16 @@ interface PortfolioDataContextType {
   personalInfo: typeof defaultPersonalInfo;
   customPhoto: string | null;
   cvFileInfo: CvFileInfo | null;
+  projects: Project[];
   isDownloading: boolean;
   downloadCv: () => Promise<boolean>;
   uploadCvFile: (file: File) => Promise<{ success: boolean; error?: string }>;
   uploadPhotoFile: (file: File) => Promise<{ success: boolean; error?: string }>;
+  uploadProjectImage: (file: File) => Promise<{ success: boolean; url?: string; error?: string }>;
+  addProject: (project: Omit<Project, 'id'>) => Promise<{ success: boolean; project?: Project; error?: string }>;
+  updateProject: (id: string, updated: Partial<Project>) => Promise<{ success: boolean; error?: string }>;
+  deleteProject: (id: string) => Promise<{ success: boolean; error?: string }>;
+  resetProjects: () => Promise<void>;
   resetPhoto: () => Promise<void>;
   resetCvFile: () => Promise<void>;
   updatePersonalInfo: (data: Partial<typeof defaultPersonalInfo>) => Promise<void>;
@@ -30,6 +37,7 @@ const PortfolioDataContext = createContext<PortfolioDataContextType | undefined>
 const CV_STORAGE_KEY = 'user_uploaded_cv_pdf';
 const PHOTO_STORAGE_KEY = 'user_uploaded_photo';
 const PROFILE_SETTINGS_KEY = 'ashraful_custom_profile_info';
+const PROJECTS_STORAGE_KEY = 'ashraful_custom_projects';
 
 export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [personalInfo, setPersonalInfo] = useState(() => {
@@ -43,9 +51,22 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const [customPhoto, setCustomPhoto] = useState<string | null>(null);
   const [cvFileInfo, setCvFileInfo] = useState<CvFileInfo | null>(null);
+  const [projects, setProjects] = useState<Project[]>(() => {
+    try {
+      const stored = localStorage.getItem(PROJECTS_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {}
+    return defaultProjects;
+  });
+
   const [isDownloading, setIsDownloading] = useState(false);
 
-  // Initialize data from IndexedDB on mount
+  // Initialize data from IndexedDB / Storage on mount
   useEffect(() => {
     let mounted = true;
 
@@ -55,7 +76,6 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
       if (photoDoc && mounted) {
         setCustomPhoto(photoDoc.base64);
       } else {
-        // Check localStorage legacy fallback
         const legacyPhoto = localStorage.getItem('ashraful_custom_photo');
         if (legacyPhoto && mounted) {
           setCustomPhoto(legacyPhoto);
@@ -72,7 +92,6 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
           base64: cvDoc.base64,
         });
       } else {
-        // Check if there is metadata saved
         const metaRaw = localStorage.getItem(`meta_${CV_STORAGE_KEY}`);
         if (metaRaw && mounted) {
           try {
@@ -86,37 +105,55 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
 
-      // 3. Optional: check Supabase if configured
-      const supabaseConfig = getSupabaseConfig();
-      if (supabaseConfig.connected && supabaseConfig.url) {
-        const { success, data } = await loadSettingsFromSupabase();
-        if (success && data && mounted) {
-          if (data.personalInfo) {
-            setPersonalInfo((prev: any) => ({ ...prev, ...data.personalInfo }));
-          }
-          if (data.adminPin) {
-            try {
-              localStorage.setItem('ashraful_admin_pin', data.adminPin);
-            } catch (e) {}
-          }
-          if (data.photoUrl) {
-            setCustomPhoto(data.photoUrl);
-          }
-          if (data.cvUrl) {
-            setCvFileInfo((prev) => ({
-              name: data.cvName || 'Md_Ashraful_Islam_CV.pdf',
-              size: data.cvSize || 0,
-              updatedAt: data.updatedAt || new Date().toISOString(),
-              publicUrl: data.cvUrl,
-            }));
+      // 3. Load Projects from LocalStorage
+      try {
+        const localProjects = localStorage.getItem(PROJECTS_STORAGE_KEY);
+        if (localProjects && mounted) {
+          const parsed = JSON.parse(localProjects);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setProjects(parsed);
           }
         }
+      } catch (e) {}
+
+      // 4. Optional: check Supabase if configured
+      try {
+        const supabaseConfig = getSupabaseConfig();
+        if (supabaseConfig.connected && supabaseConfig.url) {
+          const { success, data } = await loadSettingsFromSupabase();
+          if (success && data && mounted) {
+            if (data.personalInfo) {
+              setPersonalInfo((prev: any) => ({ ...prev, ...data.personalInfo }));
+            }
+            if (data.adminPin) {
+              try {
+                localStorage.setItem('ashraful_admin_pin', data.adminPin);
+              } catch (e) {}
+            }
+            if (data.photoUrl) {
+              setCustomPhoto(data.photoUrl);
+            }
+            if (data.cvUrl) {
+              setCvFileInfo((prev) => ({
+                name: data.cvName || 'Md_Ashraful_Islam_CV.pdf',
+                size: data.cvSize || 0,
+                updatedAt: data.updatedAt || new Date().toISOString(),
+                publicUrl: data.cvUrl,
+              }));
+            }
+            if (Array.isArray(data.projects) && data.projects.length > 0) {
+              setProjects(data.projects);
+              localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(data.projects));
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Supabase optional sync skipped:', err);
       }
     }
 
     loadData();
 
-    // Listen to cross-window or inter-component updates
     const handleGlobalUpdate = () => {
       loadData();
     };
@@ -129,15 +166,12 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   /**
-   * Downloads the active CV (user-uploaded file or server fallback)
-   * Guaranteed 100% download across all browsers/devices
+   * Downloads the active CV
    */
   const downloadCv = async (): Promise<boolean> => {
     setIsDownloading(true);
     try {
       let base64 = cvFileInfo?.base64;
-
-      // If we don't have base64 in state, try reading it from IndexedDB
       if (!base64 && cvFileInfo) {
         const doc = await getFile(CV_STORAGE_KEY);
         if (doc?.base64) {
@@ -147,9 +181,7 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const fileName = cvFileInfo?.name || 'Md_Ashraful_Islam_CV.pdf';
       const fallbackUrl = cvFileInfo?.publicUrl || '/Md_Ashraful_Islam_CV.pdf';
-
-      const success = await triggerDownload(fileName, base64, fallbackUrl);
-      return success;
+      return await triggerDownload(fileName, base64, fallbackUrl);
     } catch (err) {
       console.error('downloadCv error:', err);
       return false;
@@ -159,7 +191,7 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   /**
-   * Uploads and stores the user's real CV PDF file
+   * Upload and save a custom PDF file
    */
   const uploadCvFile = async (file: File): Promise<{ success: boolean; error?: string }> => {
     if (!file) return { success: false, error: 'No file provided' };
@@ -171,94 +203,233 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
       const reader = new FileReader();
       const base64Promise = new Promise<string>((resolve, reject) => {
         reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(file);
+        reader.onerror = (err) => reject(err);
       });
+      reader.readAsDataURL(file);
+      const base64Data = await base64Promise;
 
-      const base64 = await base64Promise;
-      const now = new Date().toISOString();
-
-      // 1. Save in IndexedDB
-      await setFile(CV_STORAGE_KEY, {
+      const fileInfo: CvFileInfo = {
         name: file.name,
-        type: file.type || 'application/pdf',
-        base64,
         size: file.size,
-        updatedAt: now,
-      });
+        updatedAt: new Date().toISOString(),
+        base64: base64Data,
+      };
 
-      // 2. Upload to Supabase if connected
-      let publicUrl: string | undefined;
+      await setFile(CV_STORAGE_KEY, {
+        name: fileInfo.name,
+        type: file.type || 'application/pdf',
+        size: fileInfo.size,
+        updatedAt: fileInfo.updatedAt,
+        base64: fileInfo.base64 || '',
+      });
+      localStorage.setItem(`meta_${CV_STORAGE_KEY}`, JSON.stringify({
+        name: fileInfo.name,
+        size: fileInfo.size,
+        updatedAt: fileInfo.updatedAt,
+      }));
+
+      // Try uploading to Supabase Storage if configured
       const supabaseConfig = getSupabaseConfig();
       if (supabaseConfig.connected) {
-        const uploadResult = await uploadFileToSupabase(file, `cv/${Date.now()}_${file.name}`, supabaseConfig.bucketName);
-        if (uploadResult.success && uploadResult.publicUrl) {
-          publicUrl = uploadResult.publicUrl;
+        const remoteRes = await uploadFileToSupabase(file, `cv/${Date.now()}_${file.name}`);
+        if (remoteRes.success && remoteRes.publicUrl) {
+          fileInfo.publicUrl = remoteRes.publicUrl;
+          await saveSettingsToSupabase({
+            cvUrl: remoteRes.publicUrl,
+            cvName: file.name,
+            cvSize: file.size,
+            updatedAt: fileInfo.updatedAt,
+          });
         }
       }
 
-      const info: CvFileInfo = {
-        name: file.name,
-        size: file.size,
-        updatedAt: now,
-        base64,
-        publicUrl,
-      };
-
-      setCvFileInfo(info);
+      setCvFileInfo(fileInfo);
       window.dispatchEvent(new Event('portfolioDataUpdated'));
       return { success: true };
     } catch (err: any) {
-      console.error('uploadCvFile error:', err);
-      return { success: false, error: err?.message || 'CV আপলোড করতে সমস্যা হয়েছে' };
+      console.error('Failed to save CV:', err);
+      return { success: false, error: err?.message || 'Failed to upload CV file.' };
     }
   };
 
   /**
-   * Uploads and stores the user's real profile photo
+   * Upload and save custom photo
    */
   const uploadPhotoFile = async (file: File): Promise<{ success: boolean; error?: string }> => {
     if (!file) return { success: false, error: 'No file provided' };
+    if (!file.type.startsWith('image/')) {
+      return { success: false, error: 'অনুগ্রহ করে একটি ছবি (Image: JPG, PNG, WEBP) নির্বাচন করুন।' };
+    }
 
     try {
       const reader = new FileReader();
       const base64Promise = new Promise<string>((resolve, reject) => {
         reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(file);
+        reader.onerror = (err) => reject(err);
       });
+      reader.readAsDataURL(file);
+      const base64Data = await base64Promise;
 
-      const base64 = await base64Promise;
-      const now = new Date().toISOString();
-
-      // 1. Save in IndexedDB and localStorage
       await setFile(PHOTO_STORAGE_KEY, {
         name: file.name,
         type: file.type || 'image/png',
-        base64,
         size: file.size,
-        updatedAt: now,
+        updatedAt: new Date().toISOString(),
+        base64: base64Data,
       });
 
       try {
-        localStorage.setItem('ashraful_custom_photo', base64);
+        localStorage.setItem('ashraful_custom_photo', base64Data);
       } catch (e) {}
 
-      // 2. Upload to Supabase if connected
       const supabaseConfig = getSupabaseConfig();
       if (supabaseConfig.connected) {
-        await uploadFileToSupabase(file, `avatars/${Date.now()}_${file.name}`, supabaseConfig.bucketName);
+        const remoteRes = await uploadFileToSupabase(file, `photos/${Date.now()}_${file.name}`);
+        if (remoteRes.success && remoteRes.publicUrl) {
+          await saveSettingsToSupabase({ photoUrl: remoteRes.publicUrl });
+        }
       }
 
-      setCustomPhoto(base64);
+      setCustomPhoto(base64Data);
       window.dispatchEvent(new Event('portfolioDataUpdated'));
       return { success: true };
     } catch (err: any) {
-      console.error('uploadPhotoFile error:', err);
-      return { success: false, error: err?.message || 'ছবি আপলোড করতে সমস্যা হয়েছে' };
+      console.error('Failed to save photo:', err);
+      return { success: false, error: err?.message || 'Failed to save photo.' };
     }
   };
 
+  /**
+   * Upload an image for a project
+   */
+  const uploadProjectImage = async (file: File): Promise<{ success: boolean; url?: string; error?: string }> => {
+    if (!file) return { success: false, error: 'No file provided' };
+    if (!file.type.startsWith('image/')) {
+      return { success: false, error: 'অনুগ্রহ করে ছবি ফাইল (JPG, PNG, WEBP) নির্বাচন করুন।' };
+    }
+
+    try {
+      // Check if Supabase storage is available
+      const supabaseConfig = getSupabaseConfig();
+      if (supabaseConfig.connected) {
+        const remoteRes = await uploadFileToSupabase(file, `projects/${Date.now()}_${file.name}`);
+        if (remoteRes.success && remoteRes.publicUrl) {
+          return { success: true, url: remoteRes.publicUrl };
+        }
+      }
+
+      // Convert to compressed base64 Data URL
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = (err) => reject(err);
+      });
+      reader.readAsDataURL(file);
+      const base64Data = await base64Promise;
+
+      return { success: true, url: base64Data };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'ছবি প্রসেস করতে ব্যর্থ হয়েছে।' };
+    }
+  };
+
+  /**
+   * Add a new project
+   */
+  const addProject = async (newProjData: Omit<Project, 'id'>): Promise<{ success: boolean; project?: Project; error?: string }> => {
+    try {
+      const newId = `proj-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+      const newProject: Project = {
+        ...newProjData,
+        id: newId,
+        createdAt: new Date().toISOString(),
+      };
+
+      const updated = [newProject, ...projects];
+      setProjects(updated);
+      try {
+        localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(updated));
+      } catch (e) {}
+
+      // Supabase sync
+      const supabaseConfig = getSupabaseConfig();
+      if (supabaseConfig.connected) {
+        await saveSettingsToSupabase({ projects: updated });
+      }
+
+      window.dispatchEvent(new Event('portfolioDataUpdated'));
+      return { success: true, project: newProject };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'প্রোজেক্ট যোগ করতে ব্যর্থ হয়েছে।' };
+    }
+  };
+
+  /**
+   * Update an existing project
+   */
+  const updateProject = async (id: string, updatedData: Partial<Project>): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const updated = projects.map((p) => (p.id === id ? { ...p, ...updatedData } : p));
+      setProjects(updated);
+      try {
+        localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(updated));
+      } catch (e) {}
+
+      const supabaseConfig = getSupabaseConfig();
+      if (supabaseConfig.connected) {
+        await saveSettingsToSupabase({ projects: updated });
+      }
+
+      window.dispatchEvent(new Event('portfolioDataUpdated'));
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'প্রোজেক্ট আপডেট করতে ব্যর্থ হয়েছে।' };
+    }
+  };
+
+  /**
+   * Delete a project
+   */
+  const deleteProject = async (id: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const updated = projects.filter((p) => p.id !== id);
+      setProjects(updated);
+      try {
+        localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(updated));
+      } catch (e) {}
+
+      const supabaseConfig = getSupabaseConfig();
+      if (supabaseConfig.connected) {
+        await saveSettingsToSupabase({ projects: updated });
+      }
+
+      window.dispatchEvent(new Event('portfolioDataUpdated'));
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'প্রোজেক্ট মুছতে ব্যর্থ হয়েছে।' };
+    }
+  };
+
+  /**
+   * Reset projects to default original showcase
+   */
+  const resetProjects = async (): Promise<void> => {
+    setProjects(defaultProjects);
+    try {
+      localStorage.removeItem(PROJECTS_STORAGE_KEY);
+    } catch (e) {}
+
+    const supabaseConfig = getSupabaseConfig();
+    if (supabaseConfig.connected) {
+      await saveSettingsToSupabase({ projects: defaultProjects });
+    }
+
+    window.dispatchEvent(new Event('portfolioDataUpdated'));
+  };
+
+  /**
+   * Reset photo to default
+   */
   const resetPhoto = async (): Promise<void> => {
     await deleteFile(PHOTO_STORAGE_KEY);
     try {
@@ -268,12 +439,21 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
     window.dispatchEvent(new Event('portfolioDataUpdated'));
   };
 
+  /**
+   * Reset CV to default
+   */
   const resetCvFile = async (): Promise<void> => {
     await deleteFile(CV_STORAGE_KEY);
+    try {
+      localStorage.removeItem(`meta_${CV_STORAGE_KEY}`);
+    } catch (e) {}
     setCvFileInfo(null);
     window.dispatchEvent(new Event('portfolioDataUpdated'));
   };
 
+  /**
+   * Update personal bio information
+   */
   const updatePersonalInfo = async (data: Partial<typeof defaultPersonalInfo>): Promise<void> => {
     const updated = { ...personalInfo, ...data };
     setPersonalInfo(updated);
@@ -285,31 +465,33 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
     if (supabaseConfig.connected) {
       await saveSettingsToSupabase({ personalInfo: updated });
     }
+
     window.dispatchEvent(new Event('portfolioDataUpdated'));
   };
 
+  /**
+   * Explicit sync with Supabase
+   */
   const syncWithSupabase = async (): Promise<{ success: boolean; message: string }> => {
-    const supabaseConfig = getSupabaseConfig();
-    if (!supabaseConfig.url || !supabaseConfig.anonKey) {
-      return { success: false, message: 'সুপাবেস URL ও Anon Key দিন' };
-    }
-
     try {
+      const pin = localStorage.getItem('ashraful_admin_pin') || '1234';
       const payload: Record<string, any> = {
         personalInfo,
+        adminPin: pin,
+        projects,
         updatedAt: new Date().toISOString(),
       };
+      if (customPhoto) payload.photoUrl = customPhoto;
       if (cvFileInfo?.publicUrl) payload.cvUrl = cvFileInfo.publicUrl;
-      if (cvFileInfo?.name) payload.cvName = cvFileInfo.name;
 
       const res = await saveSettingsToSupabase(payload);
       if (res.success) {
-        return { success: true, message: 'সুপাবেসে সফলভাবে তথ্য সিঙ্ক হয়েছে!' };
+        return { success: true, message: 'পোর্টফোলিও ও প্রোজেক্টের সমস্ত ডেটা সুপাবেস ক্লাউডে সফলভাবে সিঙ্ক হয়েছে!' };
       } else {
-        return { success: false, message: res.error || 'সুপাবেসে সিঙ্ক ব্যর্থ হয়েছে' };
+        return { success: false, message: res.error || 'সুপাবেসে ডেটা সিঙ্ক ব্যর্থ হয়েছে।' };
       }
     } catch (err: any) {
-      return { success: false, message: err?.message || 'সিঙ্ক ব্যর্থ হয়েছে' };
+      return { success: false, message: err?.message || 'Sync failed' };
     }
   };
 
@@ -319,10 +501,16 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
         personalInfo,
         customPhoto,
         cvFileInfo,
+        projects,
         isDownloading,
         downloadCv,
         uploadCvFile,
         uploadPhotoFile,
+        uploadProjectImage,
+        addProject,
+        updateProject,
+        deleteProject,
+        resetProjects,
         resetPhoto,
         resetCvFile,
         updatePersonalInfo,
@@ -334,10 +522,10 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 };
 
-export function usePortfolioData() {
+export const usePortfolioData = () => {
   const context = useContext(PortfolioDataContext);
   if (!context) {
     throw new Error('usePortfolioData must be used within a PortfolioDataProvider');
   }
   return context;
-}
+};
