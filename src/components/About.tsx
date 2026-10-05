@@ -1,10 +1,9 @@
 import React from 'react';
 import { usePortfolioData } from '../context/PortfolioDataContext';
-import { professionalQualifications, referencePerson } from '../data/portfolioData';
 import { Check, Compass, Phone, MapPin, User, Heart, Globe, Award } from 'lucide-react';
 
 export const About: React.FC = () => {
-  const { personalInfo } = usePortfolioData();
+  const { personalInfo, professionalQualifications, referencePerson } = usePortfolioData();
 
   return (
     <section id="about" className="py-16 md:py-24 bg-white dark:bg-[#121110] border-b border-neutral-200/80 dark:border-neutral-800/80 transition-colors">
@@ -35,7 +34,7 @@ export const About: React.FC = () => {
                 "{personalInfo.careerObjective}"
               </p>
               <p className="text-xs sm:text-sm text-neutral-600 dark:text-neutral-400 leading-relaxed">
-                With a specialized journey through commercial printing houses and creative agencies in Pabna, {personalInfo.name} merges high-aesthetic vector design in Adobe Illustrator with the technical exactness needed for 4-color offset pre-press, die-cutting, spot finishes, and large-scale architectural digital signage.
+                {personalInfo.aboutStory || `With a specialized journey through commercial printing houses and creative agencies in Pabna, ${personalInfo.name} merges high-aesthetic vector design in Adobe Illustrator with the technical exactness needed for 4-color offset pre-press, die-cutting, spot finishes, and large-scale architectural digital signage.`}
               </p>
             </div>
 

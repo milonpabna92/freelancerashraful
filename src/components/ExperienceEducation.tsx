@@ -1,8 +1,10 @@
 import React from 'react';
-import { experiences, educationList } from '../data/portfolioData';
+import { usePortfolioData } from '../context/PortfolioDataContext';
 import { Briefcase, GraduationCap, MapPin, Calendar, CheckCircle } from 'lucide-react';
 
 export const ExperienceEducation: React.FC = () => {
+  const { experiences, educationList, personalInfo } = usePortfolioData();
+
   return (
     <section id="experience" className="py-16 md:py-24 bg-white dark:bg-[#121110] border-b border-neutral-200/80 dark:border-neutral-800/80 transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -15,7 +17,7 @@ export const ExperienceEducation: React.FC = () => {
             Work Experience & Education
           </h2>
           <p className="text-sm sm:text-base text-neutral-600 dark:text-neutral-400 mt-2">
-            A chronological timeline of agency and print production roles alongside academic commerce certifications from the Rajshahi Education Board.
+            A chronological timeline of agency and print production roles alongside academic commerce certifications.
           </p>
         </div>
 
@@ -29,7 +31,7 @@ export const ExperienceEducation: React.FC = () => {
 
             <div className="space-y-8 relative before:absolute before:inset-0 before:left-3 before:w-0.5 before:bg-orange-200/60 dark:before:bg-neutral-800">
               {experiences.map((exp, idx) => (
-                <div key={idx} className="relative pl-8 group">
+                <div key={exp.id || idx} className="relative pl-8 group">
                   {/* Timeline Dot */}
                   <div className={`absolute left-1.5 top-1.5 w-3.5 h-3.5 rounded-full border-2 bg-white dark:bg-[#121110] transition-colors ${
                     exp.current
@@ -60,25 +62,29 @@ export const ExperienceEducation: React.FC = () => {
                       <span>{exp.type}</span>
                     </div>
 
-                    <ul className="space-y-2.5 mb-5">
-                      {exp.achievements.map((item, i) => (
-                        <li key={i} className="flex items-start gap-2.5 text-xs sm:text-sm text-neutral-600 dark:text-neutral-300">
-                          <CheckCircle className="w-3.5 h-3.5 text-[#FD6F41] mt-1 shrink-0" />
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
+                    {exp.achievements && exp.achievements.length > 0 && (
+                      <ul className="space-y-2.5 mb-5">
+                        {exp.achievements.map((item, i) => (
+                          <li key={i} className="flex items-start gap-2.5 text-xs sm:text-sm text-neutral-600 dark:text-neutral-300">
+                            <CheckCircle className="w-3.5 h-3.5 text-[#FD6F41] mt-1 shrink-0" />
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
 
-                    {/* Tools used line - unboxed text */}
-                    <div className="pt-3 border-t border-neutral-200/60 dark:border-neutral-800 flex flex-wrap items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
-                      <span className="font-medium text-neutral-700 dark:text-neutral-300">Tools & Skills:</span>
-                      {exp.toolsUsed.map((tool, tIdx) => (
-                        <React.Fragment key={tool}>
-                          <span>{tool}</span>
-                          {tIdx < exp.toolsUsed.length - 1 && <span aria-hidden="true">·</span>}
-                        </React.Fragment>
-                      ))}
-                    </div>
+                    {/* Tools used line */}
+                    {exp.toolsUsed && exp.toolsUsed.length > 0 && (
+                      <div className="pt-3 border-t border-neutral-200/60 dark:border-neutral-800 flex flex-wrap items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+                        <span className="font-medium text-neutral-700 dark:text-neutral-300">Tools & Skills:</span>
+                        {exp.toolsUsed.map((tool, tIdx) => (
+                          <React.Fragment key={tIdx}>
+                            <span>{tool}</span>
+                            {tIdx < exp.toolsUsed.length - 1 && <span aria-hidden="true">·</span>}
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -95,12 +101,12 @@ export const ExperienceEducation: React.FC = () => {
             <div className="space-y-6">
               {educationList.map((edu, idx) => (
                 <div
-                  key={idx}
+                  key={edu.id || idx}
                   className="bg-[#FFF9F6] dark:bg-[#1C1A18] border border-orange-100/80 dark:border-neutral-800 rounded-2xl p-6 sm:p-7 shadow-xs hover:border-[#FD6F41] transition-all duration-300"
                 >
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <span className="text-xs font-semibold uppercase tracking-wider text-[#FD6F41] font-['Archivo',sans-serif]">
-                      Commerce Group
+                      {edu.group ? `${edu.group} Group` : 'Academic'}
                     </span>
                     <span className="text-xs font-bold tabular-nums text-neutral-500 dark:text-neutral-400 flex items-center gap-1">
                       <Calendar className="w-3.5 h-3.5" />
@@ -135,10 +141,10 @@ export const ExperienceEducation: React.FC = () => {
                   Official CV Declaration
                 </p>
                 <p className="italic leading-relaxed">
-                  "I hereby declare that all the information provided in this CV is true, accurate, and complete to the best of my knowledge and belief. I take full responsibility for the authenticity of the information mentioned above and assure that I will perform my duties with sincerity, dedication, and professionalism."
+                  "{personalInfo.declarationText || 'I hereby declare that all the information provided in this CV is true, accurate, and complete to the best of my knowledge and belief. I take full responsibility for the authenticity of the information mentioned above and assure that I will perform my duties with sincerity, dedication, and professionalism.'}"
                 </p>
                 <p className="mt-2 font-medium text-[#111827] dark:text-neutral-200 not-italic">
-                  — Md. Ashraful Islam
+                  — {personalInfo.name}
                 </p>
               </div>
             </div>

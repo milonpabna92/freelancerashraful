@@ -1,6 +1,24 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { personalInfo as defaultPersonalInfo, projects as defaultProjects } from '../data/portfolioData';
-import { Project } from '../types';
+import {
+  personalInfo as defaultPersonalInfo,
+  projects as defaultProjects,
+  defaultServices,
+  defaultSkillBars,
+  defaultPrepressChecklist,
+  experiences as defaultExperiences,
+  educationList as defaultEducationList,
+  professionalQualifications as defaultQualifications,
+  referencePerson as defaultReferencePerson,
+} from '../data/portfolioData';
+import {
+  Project,
+  ServiceItem,
+  SkillBarItem,
+  PrepressItem,
+  Experience,
+  Education,
+  ReferencePerson,
+} from '../types';
 import { getFile, setFile, deleteFile, triggerDownload } from '../utils/storage';
 import { getSupabaseConfig, uploadFileToSupabase, saveSettingsToSupabase, loadSettingsFromSupabase } from '../lib/supabase';
 
@@ -17,6 +35,13 @@ interface PortfolioDataContextType {
   customPhoto: string | null;
   cvFileInfo: CvFileInfo | null;
   projects: Project[];
+  services: ServiceItem[];
+  skillBars: SkillBarItem[];
+  prepressChecklist: PrepressItem[];
+  experiences: Experience[];
+  educationList: Education[];
+  professionalQualifications: string[];
+  referencePerson: ReferencePerson;
   isDownloading: boolean;
   downloadCv: () => Promise<boolean>;
   uploadCvFile: (file: File) => Promise<{ success: boolean; error?: string }>;
@@ -29,6 +54,20 @@ interface PortfolioDataContextType {
   resetPhoto: () => Promise<void>;
   resetCvFile: () => Promise<void>;
   updatePersonalInfo: (data: Partial<typeof defaultPersonalInfo>) => Promise<void>;
+  updateServices: (newServices: ServiceItem[]) => Promise<void>;
+  resetServices: () => Promise<void>;
+  updateSkillBars: (newSkills: SkillBarItem[]) => Promise<void>;
+  resetSkillBars: () => Promise<void>;
+  updatePrepressChecklist: (newItems: PrepressItem[]) => Promise<void>;
+  resetPrepressChecklist: () => Promise<void>;
+  updateExperiences: (newExps: Experience[]) => Promise<void>;
+  resetExperiences: () => Promise<void>;
+  updateEducationList: (newEdus: Education[]) => Promise<void>;
+  resetEducationList: () => Promise<void>;
+  updateQualifications: (newQuals: string[]) => Promise<void>;
+  resetQualifications: () => Promise<void>;
+  updateReferencePerson: (newRef: ReferencePerson) => Promise<void>;
+  resetReferencePerson: () => Promise<void>;
   syncWithSupabase: () => Promise<{ success: boolean; message: string }>;
 }
 
@@ -38,12 +77,33 @@ const CV_STORAGE_KEY = 'user_uploaded_cv_pdf';
 const PHOTO_STORAGE_KEY = 'user_uploaded_photo';
 const PROFILE_SETTINGS_KEY = 'ashraful_custom_profile_info';
 const PROJECTS_STORAGE_KEY = 'ashraful_custom_projects';
+const SERVICES_STORAGE_KEY = 'ashraful_custom_services';
+const SKILLS_STORAGE_KEY = 'ashraful_custom_skills';
+const PREPRESS_STORAGE_KEY = 'ashraful_custom_prepress';
+const EXPERIENCES_STORAGE_KEY = 'ashraful_custom_experiences';
+const EDUCATION_STORAGE_KEY = 'ashraful_custom_education';
+const QUALIFICATIONS_STORAGE_KEY = 'ashraful_custom_qualifications';
+const REFERENCE_STORAGE_KEY = 'ashraful_custom_reference';
 
 export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [personalInfo, setPersonalInfo] = useState(() => {
     try {
       const stored = localStorage.getItem(PROFILE_SETTINGS_KEY);
-      return stored ? { ...defaultPersonalInfo, ...JSON.parse(stored) } : defaultPersonalInfo;
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return {
+          ...defaultPersonalInfo,
+          ...parsed,
+          personalDetails: {
+            ...defaultPersonalInfo.personalDetails,
+            ...(parsed.personalDetails || {}),
+          },
+          heroStats: Array.isArray(parsed.heroStats) && parsed.heroStats.length > 0 ? parsed.heroStats : defaultPersonalInfo.heroStats,
+          languages: Array.isArray(parsed.languages) && parsed.languages.length > 0 ? parsed.languages : defaultPersonalInfo.languages,
+          hobbies: Array.isArray(parsed.hobbies) && parsed.hobbies.length > 0 ? parsed.hobbies : defaultPersonalInfo.hobbies,
+        };
+      }
+      return defaultPersonalInfo;
     } catch {
       return defaultPersonalInfo;
     }
@@ -62,6 +122,83 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     } catch (e) {}
     return defaultProjects;
+  });
+
+  const [services, setServices] = useState<ServiceItem[]>(() => {
+    try {
+      const stored = localStorage.getItem(SERVICES_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return defaultServices;
+  });
+
+  const [skillBars, setSkillBars] = useState<SkillBarItem[]>(() => {
+    try {
+      const stored = localStorage.getItem(SKILLS_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return defaultSkillBars;
+  });
+
+  const [prepressChecklist, setPrepressChecklist] = useState<PrepressItem[]>(() => {
+    try {
+      const stored = localStorage.getItem(PREPRESS_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return defaultPrepressChecklist;
+  });
+
+  const [experiences, setExperiences] = useState<Experience[]>(() => {
+    try {
+      const stored = localStorage.getItem(EXPERIENCES_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return defaultExperiences;
+  });
+
+  const [educationList, setEducationList] = useState<Education[]>(() => {
+    try {
+      const stored = localStorage.getItem(EDUCATION_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return defaultEducationList;
+  });
+
+  const [professionalQualifications, setProfessionalQualifications] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem(QUALIFICATIONS_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return defaultQualifications;
+  });
+
+  const [referencePerson, setReferencePerson] = useState<ReferencePerson>(() => {
+    try {
+      const stored = localStorage.getItem(REFERENCE_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && parsed.name) return parsed;
+      }
+    } catch (e) {}
+    return defaultReferencePerson;
   });
 
   const [isDownloading, setIsDownloading] = useState(false);
@@ -123,7 +260,17 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
           const { success, data } = await loadSettingsFromSupabase();
           if (success && data && mounted) {
             if (data.personalInfo) {
-              setPersonalInfo((prev: any) => ({ ...prev, ...data.personalInfo }));
+              setPersonalInfo((prev: any) => ({
+                ...prev,
+                ...data.personalInfo,
+                personalDetails: {
+                  ...prev.personalDetails,
+                  ...(data.personalInfo.personalDetails || {}),
+                },
+              }));
+              try {
+                localStorage.setItem(PROFILE_SETTINGS_KEY, JSON.stringify(data.personalInfo));
+              } catch (e) {}
             }
             if (data.adminPin) {
               try {
@@ -134,16 +281,44 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
               setCustomPhoto(data.photoUrl);
             }
             if (data.cvUrl) {
-              setCvFileInfo((prev) => ({
+              setCvFileInfo({
                 name: data.cvName || 'Md_Ashraful_Islam_CV.pdf',
                 size: data.cvSize || 0,
                 updatedAt: data.updatedAt || new Date().toISOString(),
                 publicUrl: data.cvUrl,
-              }));
+              });
             }
             if (Array.isArray(data.projects) && data.projects.length > 0) {
               setProjects(data.projects);
               localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(data.projects));
+            }
+            if (Array.isArray(data.services) && data.services.length > 0) {
+              setServices(data.services);
+              localStorage.setItem(SERVICES_STORAGE_KEY, JSON.stringify(data.services));
+            }
+            if (Array.isArray(data.skillBars) && data.skillBars.length > 0) {
+              setSkillBars(data.skillBars);
+              localStorage.setItem(SKILLS_STORAGE_KEY, JSON.stringify(data.skillBars));
+            }
+            if (Array.isArray(data.prepressChecklist) && data.prepressChecklist.length > 0) {
+              setPrepressChecklist(data.prepressChecklist);
+              localStorage.setItem(PREPRESS_STORAGE_KEY, JSON.stringify(data.prepressChecklist));
+            }
+            if (Array.isArray(data.experiences) && data.experiences.length > 0) {
+              setExperiences(data.experiences);
+              localStorage.setItem(EXPERIENCES_STORAGE_KEY, JSON.stringify(data.experiences));
+            }
+            if (Array.isArray(data.educationList) && data.educationList.length > 0) {
+              setEducationList(data.educationList);
+              localStorage.setItem(EDUCATION_STORAGE_KEY, JSON.stringify(data.educationList));
+            }
+            if (Array.isArray(data.professionalQualifications) && data.professionalQualifications.length > 0) {
+              setProfessionalQualifications(data.professionalQualifications);
+              localStorage.setItem(QUALIFICATIONS_STORAGE_KEY, JSON.stringify(data.professionalQualifications));
+            }
+            if (data.referencePerson && data.referencePerson.name) {
+              setReferencePerson(data.referencePerson);
+              localStorage.setItem(REFERENCE_STORAGE_KEY, JSON.stringify(data.referencePerson));
             }
           }
         }
@@ -455,7 +630,14 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
    * Update personal bio information
    */
   const updatePersonalInfo = async (data: Partial<typeof defaultPersonalInfo>): Promise<void> => {
-    const updated = { ...personalInfo, ...data };
+    const updated = {
+      ...personalInfo,
+      ...data,
+      personalDetails: {
+        ...personalInfo.personalDetails,
+        ...(data.personalDetails || {}),
+      },
+    };
     setPersonalInfo(updated);
     try {
       localStorage.setItem(PROFILE_SETTINGS_KEY, JSON.stringify(updated));
@@ -470,6 +652,195 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   /**
+   * Services Management
+   */
+  const updateServices = async (newServices: ServiceItem[]): Promise<void> => {
+    setServices(newServices);
+    try {
+      localStorage.setItem(SERVICES_STORAGE_KEY, JSON.stringify(newServices));
+    } catch (e) {}
+    const supabaseConfig = getSupabaseConfig();
+    if (supabaseConfig.connected) {
+      await saveSettingsToSupabase({ services: newServices });
+    }
+    window.dispatchEvent(new Event('portfolioDataUpdated'));
+  };
+
+  const resetServices = async (): Promise<void> => {
+    setServices(defaultServices);
+    try {
+      localStorage.removeItem(SERVICES_STORAGE_KEY);
+    } catch (e) {}
+    const supabaseConfig = getSupabaseConfig();
+    if (supabaseConfig.connected) {
+      await saveSettingsToSupabase({ services: defaultServices });
+    }
+    window.dispatchEvent(new Event('portfolioDataUpdated'));
+  };
+
+  /**
+   * Skills Management
+   */
+  const updateSkillBars = async (newSkills: SkillBarItem[]): Promise<void> => {
+    setSkillBars(newSkills);
+    try {
+      localStorage.setItem(SKILLS_STORAGE_KEY, JSON.stringify(newSkills));
+    } catch (e) {}
+    const supabaseConfig = getSupabaseConfig();
+    if (supabaseConfig.connected) {
+      await saveSettingsToSupabase({ skillBars: newSkills });
+    }
+    window.dispatchEvent(new Event('portfolioDataUpdated'));
+  };
+
+  const resetSkillBars = async (): Promise<void> => {
+    setSkillBars(defaultSkillBars);
+    try {
+      localStorage.removeItem(SKILLS_STORAGE_KEY);
+    } catch (e) {}
+    const supabaseConfig = getSupabaseConfig();
+    if (supabaseConfig.connected) {
+      await saveSettingsToSupabase({ skillBars: defaultSkillBars });
+    }
+    window.dispatchEvent(new Event('portfolioDataUpdated'));
+  };
+
+  /**
+   * Pre-press Checklist Management
+   */
+  const updatePrepressChecklist = async (newItems: PrepressItem[]): Promise<void> => {
+    setPrepressChecklist(newItems);
+    try {
+      localStorage.setItem(PREPRESS_STORAGE_KEY, JSON.stringify(newItems));
+    } catch (e) {}
+    const supabaseConfig = getSupabaseConfig();
+    if (supabaseConfig.connected) {
+      await saveSettingsToSupabase({ prepressChecklist: newItems });
+    }
+    window.dispatchEvent(new Event('portfolioDataUpdated'));
+  };
+
+  const resetPrepressChecklist = async (): Promise<void> => {
+    setPrepressChecklist(defaultPrepressChecklist);
+    try {
+      localStorage.removeItem(PREPRESS_STORAGE_KEY);
+    } catch (e) {}
+    const supabaseConfig = getSupabaseConfig();
+    if (supabaseConfig.connected) {
+      await saveSettingsToSupabase({ prepressChecklist: defaultPrepressChecklist });
+    }
+    window.dispatchEvent(new Event('portfolioDataUpdated'));
+  };
+
+  /**
+   * Work Experiences Management
+   */
+  const updateExperiences = async (newExps: Experience[]): Promise<void> => {
+    setExperiences(newExps);
+    try {
+      localStorage.setItem(EXPERIENCES_STORAGE_KEY, JSON.stringify(newExps));
+    } catch (e) {}
+    const supabaseConfig = getSupabaseConfig();
+    if (supabaseConfig.connected) {
+      await saveSettingsToSupabase({ experiences: newExps });
+    }
+    window.dispatchEvent(new Event('portfolioDataUpdated'));
+  };
+
+  const resetExperiences = async (): Promise<void> => {
+    setExperiences(defaultExperiences);
+    try {
+      localStorage.removeItem(EXPERIENCES_STORAGE_KEY);
+    } catch (e) {}
+    const supabaseConfig = getSupabaseConfig();
+    if (supabaseConfig.connected) {
+      await saveSettingsToSupabase({ experiences: defaultExperiences });
+    }
+    window.dispatchEvent(new Event('portfolioDataUpdated'));
+  };
+
+  /**
+   * Education Management
+   */
+  const updateEducationList = async (newEdus: Education[]): Promise<void> => {
+    setEducationList(newEdus);
+    try {
+      localStorage.setItem(EDUCATION_STORAGE_KEY, JSON.stringify(newEdus));
+    } catch (e) {}
+    const supabaseConfig = getSupabaseConfig();
+    if (supabaseConfig.connected) {
+      await saveSettingsToSupabase({ educationList: newEdus });
+    }
+    window.dispatchEvent(new Event('portfolioDataUpdated'));
+  };
+
+  const resetEducationList = async (): Promise<void> => {
+    setEducationList(defaultEducationList);
+    try {
+      localStorage.removeItem(EDUCATION_STORAGE_KEY);
+    } catch (e) {}
+    const supabaseConfig = getSupabaseConfig();
+    if (supabaseConfig.connected) {
+      await saveSettingsToSupabase({ educationList: defaultEducationList });
+    }
+    window.dispatchEvent(new Event('portfolioDataUpdated'));
+  };
+
+  /**
+   * Professional Qualifications Management
+   */
+  const updateQualifications = async (newQuals: string[]): Promise<void> => {
+    setProfessionalQualifications(newQuals);
+    try {
+      localStorage.setItem(QUALIFICATIONS_STORAGE_KEY, JSON.stringify(newQuals));
+    } catch (e) {}
+    const supabaseConfig = getSupabaseConfig();
+    if (supabaseConfig.connected) {
+      await saveSettingsToSupabase({ professionalQualifications: newQuals });
+    }
+    window.dispatchEvent(new Event('portfolioDataUpdated'));
+  };
+
+  const resetQualifications = async (): Promise<void> => {
+    setProfessionalQualifications(defaultQualifications);
+    try {
+      localStorage.removeItem(QUALIFICATIONS_STORAGE_KEY);
+    } catch (e) {}
+    const supabaseConfig = getSupabaseConfig();
+    if (supabaseConfig.connected) {
+      await saveSettingsToSupabase({ professionalQualifications: defaultQualifications });
+    }
+    window.dispatchEvent(new Event('portfolioDataUpdated'));
+  };
+
+  /**
+   * Reference Person Management
+   */
+  const updateReferencePerson = async (newRef: ReferencePerson): Promise<void> => {
+    setReferencePerson(newRef);
+    try {
+      localStorage.setItem(REFERENCE_STORAGE_KEY, JSON.stringify(newRef));
+    } catch (e) {}
+    const supabaseConfig = getSupabaseConfig();
+    if (supabaseConfig.connected) {
+      await saveSettingsToSupabase({ referencePerson: newRef });
+    }
+    window.dispatchEvent(new Event('portfolioDataUpdated'));
+  };
+
+  const resetReferencePerson = async (): Promise<void> => {
+    setReferencePerson(defaultReferencePerson);
+    try {
+      localStorage.removeItem(REFERENCE_STORAGE_KEY);
+    } catch (e) {}
+    const supabaseConfig = getSupabaseConfig();
+    if (supabaseConfig.connected) {
+      await saveSettingsToSupabase({ referencePerson: defaultReferencePerson });
+    }
+    window.dispatchEvent(new Event('portfolioDataUpdated'));
+  };
+
+  /**
    * Explicit sync with Supabase
    */
   const syncWithSupabase = async (): Promise<{ success: boolean; message: string }> => {
@@ -479,6 +850,13 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
         personalInfo,
         adminPin: pin,
         projects,
+        services,
+        skillBars,
+        prepressChecklist,
+        experiences,
+        educationList,
+        professionalQualifications,
+        referencePerson,
         updatedAt: new Date().toISOString(),
       };
       if (customPhoto) payload.photoUrl = customPhoto;
@@ -502,6 +880,13 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
         customPhoto,
         cvFileInfo,
         projects,
+        services,
+        skillBars,
+        prepressChecklist,
+        experiences,
+        educationList,
+        professionalQualifications,
+        referencePerson,
         isDownloading,
         downloadCv,
         uploadCvFile,
@@ -514,6 +899,20 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
         resetPhoto,
         resetCvFile,
         updatePersonalInfo,
+        updateServices,
+        resetServices,
+        updateSkillBars,
+        resetSkillBars,
+        updatePrepressChecklist,
+        resetPrepressChecklist,
+        updateExperiences,
+        resetExperiences,
+        updateEducationList,
+        resetEducationList,
+        updateQualifications,
+        resetQualifications,
+        updateReferencePerson,
+        resetReferencePerson,
         syncWithSupabase,
       }}
     >

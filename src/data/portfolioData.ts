@@ -1,4 +1,4 @@
-import { Experience, Education, Project, SkillCategory, ReferencePerson } from '../types';
+import { Experience, Education, Project, SkillCategory, ReferencePerson, ServiceItem, SkillBarItem, PrepressItem } from '../types';
 
 import userPhotoImg from '../assets/images/ashraful_executive_portrait_1790863444217.jpg';
 import brandingImg from '../assets/images/showcase_branding_identity_1790861697455.jpg';
@@ -7,8 +7,11 @@ import packagingImg from '../assets/images/showcase_packaging_print_179086172303
 import socialImg from '../assets/images/showcase_social_campaign_1790861737757.jpg';
 
 export const personalInfo = {
+  brandName: "Ashraful",
+  greeting: "Hi, I'm",
   name: "Md. Ashraful Islam",
   role: "Senior Graphic Designer",
+  footerSubtitle: "Pre-Press & Offset Printing Specialist",
   status: "Available for freelance & full-time roles",
   email: "milonpabna92@gmail.com",
   phone: "+880 1577 564 797",
@@ -16,6 +19,7 @@ export const personalInfo = {
   whatsappUrl: "https://wa.me/8801577564797",
   presentAddress: "Banglabazar, Lanchghat, Pabna Sadar, Pabna, Bangladesh",
   permanentAddress: "Vill: Charkushakhali, P.O: Asutuspur, UP: Pabna Sadar, Dist: Pabna",
+  studioAddress: "AR Digital Sign · Near to Boro Bridge, Pabna",
   behanceUrl: "https://www.behance.net/ashraful0709",
   behanceHandle: "ashraful0709",
   facebookUrl: "https://www.facebook.com/ashrafulislam0709",
@@ -27,6 +31,18 @@ export const personalInfo = {
     "A passionate and results-driven Graphic Designer with experience in creating visually appealing designs for digital and print media. Skilled in developing creative concepts, maintaining brand identity, and delivering high-quality design solutions while continuously improving my skills in a professional environment.",
   summary:
     "Senior Graphic Designer with over 7 years of specialized expertise across brand identity architecture, precision pre-press offset printing setup, commercial signage, high-impact packaging, and social media creative campaigns. Proven track record at AR Digital Sign and Sunam Graph in Pabna.",
+  aboutStory:
+    "With a specialized journey through commercial printing houses and creative agencies in Pabna, Md. Ashraful Islam merges high-aesthetic vector design in Adobe Illustrator with the technical exactness needed for 4-color offset pre-press, die-cutting, spot finishes, and large-scale architectural digital signage.",
+  declarationText:
+    "I hereby declare that all the information provided in this CV is true, accurate, and complete to the best of my knowledge and belief. I take full responsibility for the authenticity of the information mentioned above and assure that I will perform my duties with sincerity, dedication, and professionalism.",
+  badgeValue: "7+",
+  badgeTitle: "Years Active",
+  badgeSubtitle: "AR Digital Sign",
+  heroStats: [
+    { title: "8 Years Job", subtitle: "Experience" },
+    { title: "650+ Projects", subtitle: "Completed" },
+    { title: "Online 24/7", subtitle: "Client Support" },
+  ],
   stats: [
     { label: "Years Experience", value: "7+" },
     { label: "Completed Projects", value: "650+" },
@@ -56,6 +72,85 @@ export const personalInfo = {
     { name: "Cinema", description: "Analyzing cinematography, visual storytelling, and color grading in international films." },
   ],
 };
+
+export const defaultServices: ServiceItem[] = [
+  {
+    id: "srv-branding",
+    title: "Brand Identity & Logo",
+    desc: "Distinctive vector monograms, typography hierarchy, comprehensive brand guidelines, stationery, and corporate identity systems.",
+    tools: "Adobe Illustrator",
+    iconName: "PenTool",
+    colorTheme: "purple",
+  },
+  {
+    id: "srv-prepress",
+    title: "Pre-Press & Offset Setup",
+    desc: "4-color CMYK process separation, Pantone spot inks, die-cut packaging cartons, trapping, overprint control, and plate exposure files.",
+    tools: "Pre-press & Packaging",
+    iconName: "Printer",
+    colorTheme: "amber",
+  },
+  {
+    id: "srv-signage",
+    title: "Outdoor Signage & Flex",
+    desc: "Large-format outdoor billboards, architectural digital signs, acrylic 3D letters, backlit flex banners, and vinyl plot production.",
+    tools: "AR Digital Sign",
+    iconName: "Megaphone",
+    colorTheme: "orange",
+  },
+  {
+    id: "srv-social",
+    title: "Social Media & Ad Creatives",
+    desc: "High-conversion Facebook & Instagram banners, carousel storytelling, digital promotional campaigns, and photo retouching.",
+    tools: "Adobe Photoshop",
+    iconName: "Sparkles",
+    colorTheme: "teal",
+  },
+];
+
+export const defaultSkillBars: SkillBarItem[] = [
+  { id: "sk-1", name: "Adobe Illustrator (Expert)", percentage: 98 },
+  { id: "sk-2", name: "Adobe Photoshop (Expert)", percentage: 95 },
+  { id: "sk-3", name: "Graphic Design & Brand Identity", percentage: 96 },
+  { id: "sk-4", name: "Social Media Creative Design", percentage: 93 },
+  { id: "sk-5", name: "Offset Printing Setup & Die-lines", percentage: 95 },
+  { id: "sk-6", name: "Color Knowledge & CMYK Separation", percentage: 96 },
+  { id: "sk-7", name: "Commercial Signage & Billboards", percentage: 92 },
+  { id: "sk-8", name: "Photo Editing & High-End Retouching", percentage: 90 },
+];
+
+export const defaultPrepressChecklist: PrepressItem[] = [
+  {
+    id: "pp-1",
+    title: "CMYK Separation & Ink Limits",
+    desc: "Raster & vector artwork converted to CMYK (FOGRA39 / GRACoL) with total ink limit (TIC) kept under 300% to prevent press smearing.",
+  },
+  {
+    id: "pp-2",
+    title: "Bleed (3mm–5mm) & Safe Margins",
+    desc: "Standard 3mm–5mm bleed past trim boundaries to eliminate white edges during precision guillotining, safety margins >= 4mm.",
+  },
+  {
+    id: "pp-3",
+    title: "Packaging Die-Lines & Creases",
+    desc: "Dedicated spot color vector layers marked as 'Non-Printing' with clear separation between cut lines, creases, and perforations.",
+  },
+  {
+    id: "pp-4",
+    title: "Overprint & Micro-Trapping",
+    desc: "Enforcing 100% K overprint on fine body typography and setting 0.25pt traps on contrasting color intersections.",
+  },
+  {
+    id: "pp-5",
+    title: "Spot UV & Foil Stamping Blocks",
+    desc: "Isolated 100% solid vector separation plates for gold/silver foil stamping dies and spot gloss varnish finishes.",
+  },
+  {
+    id: "pp-6",
+    title: "Billboard & Signage Scaling",
+    desc: "Calibrated raster DPI and 1:1 vector paths for large-format outdoor billboards, backlit acrylic, and flex installations at AR Digital Sign.",
+  },
+];
 
 export const experiences: Experience[] = [
   {

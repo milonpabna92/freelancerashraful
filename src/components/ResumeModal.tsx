@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { usePortfolioData } from '../context/PortfolioDataContext';
-import { referencePerson, professionalQualifications } from '../data/portfolioData';
 import {
   X,
   Printer,
@@ -17,13 +16,19 @@ interface ResumeModalProps {
   onOpenAdmin?: () => void;
 }
 
-export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose, onOpenAdmin }) => {
+export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose }) => {
   const {
     personalInfo,
     customPhoto,
     cvFileInfo,
+    experiences,
+    educationList,
+    skillBars,
+    professionalQualifications,
+    referencePerson,
     downloadCv,
     isDownloading,
+    updatePersonalInfo,
   } = usePortfolioData();
 
   const [driveUrl, setDriveUrl] = useState<string>(() => {
@@ -33,6 +38,12 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose, onOpe
       return personalInfo.googleDriveCvUrl;
     }
   });
+
+  useEffect(() => {
+    if (personalInfo.googleDriveCvUrl) {
+      setDriveUrl(personalInfo.googleDriveCvUrl);
+    }
+  }, [personalInfo.googleDriveCvUrl]);
 
   const [isEditingUrl, setIsEditingUrl] = useState(false);
   const [tempUrl, setTempUrl] = useState(driveUrl);
@@ -59,13 +70,14 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose, onOpe
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleSaveUrl = () => {
+  const handleSaveUrl = async () => {
     const trimmed = tempUrl.trim();
     if (trimmed) {
       setDriveUrl(trimmed);
       try {
         localStorage.setItem('ashraful_cv_drive_url', trimmed);
       } catch (e) {}
+      await updatePersonalInfo({ googleDriveCvUrl: trimmed });
     }
     setIsEditingUrl(false);
   };
@@ -86,7 +98,7 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose, onOpe
               Official Curriculum Vitae (CV)
             </h2>
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              {cvFileInfo ? `${cvFileInfo.name}` : 'Md. Ashraful Islam · Senior Graphic Designer'}
+              {cvFileInfo ? `${cvFileInfo.name}` : `${personalInfo.name} · ${personalInfo.role}`}
             </p>
           </div>
 
@@ -184,13 +196,12 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose, onOpe
                 {/* Photo & Name */}
                 <div className="text-center md:text-left">
                   <div
-                    onDoubleClick={() => onOpenAdmin && onOpenAdmin()}
                     className="relative w-32 h-32 mx-auto md:mx-0 rounded-lg overflow-hidden border-2 border-neutral-300 mb-4 bg-neutral-100 select-none"
                     title=""
                   >
                     <img
                       src={activePhoto}
-                      alt="Md. Ashraful Islam"
+                      alt={personalInfo.name}
                       className="w-full h-full object-cover"
                     />
                   </div>
@@ -241,10 +252,10 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose, onOpe
                   <h3 className="text-xs font-bold uppercase tracking-wider text-[#1E88B5] mb-2 font-['Archivo',sans-serif]">
                     Languages
                   </h3>
-                  <div className="flex items-center justify-between text-xs text-neutral-700">
-                    <span>Bangla (Native)</span>
-                    <span>English</span>
-                    <span>Hindi</span>
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-700">
+                    {personalInfo.languages.map((lang, i) => (
+                      <span key={i}>{lang.name}</span>
+                    ))}
                   </div>
                 </div>
 
@@ -254,12 +265,9 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose, onOpe
                     Hobbies
                   </h3>
                   <div className="grid grid-cols-2 gap-1.5 text-xs text-neutral-600">
-                    <span>• Traveling</span>
-                    <span>• Design</span>
-                    <span>• Photography</span>
-                    <span>• Cinema</span>
-                    <span>• Cooking</span>
-                    <span>• Flute Playing</span>
+                    {personalInfo.hobbies.map((hobby, i) => (
+                      <span key={i}>• {hobby.name}</span>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -274,25 +282,17 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose, onOpe
                   </h3>
 
                   <div className="space-y-4">
-                    <div>
-                      <h4 className="text-sm font-bold text-neutral-900 font-['Archivo',sans-serif]">
-                        Senior Graphic Designer
-                      </h4>
-                      <p className="text-xs font-semibold text-neutral-700">Company Name : AR Digital Sign</p>
-                      <p className="text-xs text-neutral-500">
-                        Near to Boro Bridge, Abdul Hamid Road, Pabna · 2022 to till Now
-                      </p>
-                    </div>
-
-                    <div>
-                      <h4 className="text-sm font-bold text-neutral-900 font-['Archivo',sans-serif]">
-                        Graphic Designer
-                      </h4>
-                      <p className="text-xs font-semibold text-neutral-700">Company Name : Sunam Graph</p>
-                      <p className="text-xs text-neutral-500">
-                        Maksuda Mahal, Abdul Hamid Road, Pabna · 2019 to 2022
-                      </p>
-                    </div>
+                    {experiences.map((exp, idx) => (
+                      <div key={exp.id || idx}>
+                        <h4 className="text-sm font-bold text-neutral-900 font-['Archivo',sans-serif]">
+                          {exp.role}
+                        </h4>
+                        <p className="text-xs font-semibold text-neutral-700">Company Name : {exp.company}</p>
+                        <p className="text-xs text-neutral-500">
+                          {exp.location} · {exp.period}
+                        </p>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
@@ -303,25 +303,17 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose, onOpe
                   </h3>
 
                   <div className="space-y-3 text-xs">
-                    <div>
-                      <h4 className="font-bold text-neutral-900 font-['Archivo',sans-serif]">
-                        Higher Secondary Certificate (HSC)
-                      </h4>
-                      <p className="text-neutral-700">Institute: Islamia Digri College Pabna</p>
-                      <p className="text-neutral-500">
-                        Board: Rajshahi · Group: Commerce · Result: 3.50 (Out of 5.00) · Passing Year: 2009
-                      </p>
-                    </div>
-
-                    <div>
-                      <h4 className="font-bold text-neutral-900 font-['Archivo',sans-serif]">
-                        Secondary School Certificate (SSC)
-                      </h4>
-                      <p className="text-neutral-700">Institute: Gopal Chandra Institution Pabna</p>
-                      <p className="text-neutral-500">
-                        Board: Rajshahi · Group: Commerce · Result: 2.50 (Out of 5.00) · Passing Year: 2007
-                      </p>
-                    </div>
+                    {educationList.map((edu, idx) => (
+                      <div key={edu.id || idx}>
+                        <h4 className="font-bold text-neutral-900 font-['Archivo',sans-serif]">
+                          {edu.degree}
+                        </h4>
+                        <p className="text-neutral-700">Institute: {edu.institute}</p>
+                        <p className="text-neutral-500">
+                          Board: {edu.board} · Group: {edu.group} · Result: {edu.result} · Passing Year: {edu.passingYear}
+                        </p>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
@@ -332,15 +324,9 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose, onOpe
                   </h3>
 
                   <ul className="grid grid-cols-1 gap-1.5 text-xs text-neutral-700 list-disc list-inside">
-                    <li>Adobe Illustrator (Expert)</li>
-                    <li>Adobe Photoshop (Expert)</li>
-                    <li>Graphic Design & Branding</li>
-                    <li>Digital & Print Media Design</li>
-                    <li>Color Knowledge About Offset Printing</li>
-                    <li>Offset Printing Setup</li>
-                    <li>Photo Editing & Retouching</li>
-                    <li>Social Media Creative Design</li>
-                    <li>Microsoft Office Applications</li>
+                    {skillBars.map((sk, idx) => (
+                      <li key={sk.id || idx}>{sk.name}</li>
+                    ))}
                   </ul>
                 </div>
 
@@ -420,7 +406,7 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose, onOpe
                 Declaration
               </h4>
               <p className="text-xs text-neutral-600 leading-relaxed text-justify">
-                I hereby declare that all the information provided in this CV is true, accurate, and complete to the best of my knowledge and belief. I take full responsibility for the authenticity of the information mentioned above and assure that I will perform my duties with sincerity, dedication, and professionalism.
+                {personalInfo.declarationText || 'I hereby declare that all the information provided in this CV is true, accurate, and complete to the best of my knowledge and belief. I take full responsibility for the authenticity of the information mentioned above and assure that I will perform my duties with sincerity, dedication, and professionalism.'}
               </p>
 
               <div className="mt-12 text-right">

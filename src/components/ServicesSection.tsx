@@ -1,42 +1,34 @@
 import React from 'react';
-import { PenTool, Printer, Megaphone, Sparkles, ArrowRight } from 'lucide-react';
+import { usePortfolioData } from '../context/PortfolioDataContext';
+import { PenTool, Printer, Megaphone, Sparkles, Palette, Layers, Image as ImageIcon, Monitor, ArrowRight } from 'lucide-react';
+
+const ICON_MAP: Record<string, React.ComponentType<any>> = {
+  PenTool,
+  Printer,
+  Megaphone,
+  Sparkles,
+  Palette,
+  Layers,
+  Image: ImageIcon,
+  Monitor,
+};
+
+const COLOR_THEME_MAP: Record<string, string> = {
+  purple: 'bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400',
+  amber: 'bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400',
+  orange: 'bg-orange-50 text-[#FD6F41] dark:bg-orange-950/40 dark:text-orange-400',
+  teal: 'bg-teal-50 text-teal-600 dark:bg-teal-950/40 dark:text-teal-400',
+  blue: 'bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400',
+  rose: 'bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400',
+};
 
 export const ServicesSection: React.FC = () => {
-  const services = [
-    {
-      title: "Brand Identity & Logo",
-      desc: "Distinctive vector monograms, typography hierarchy, comprehensive brand guidelines, stationery, and corporate identity systems.",
-      tools: "Adobe Illustrator",
-      badgeLight: "bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400",
-      icon: PenTool,
-    },
-    {
-      title: "Pre-Press & Offset Setup",
-      desc: "4-color CMYK process separation, Pantone spot inks, die-cut packaging cartons, trapping, overprint control, and plate exposure files.",
-      tools: "Pre-press & Packaging",
-      badgeLight: "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400",
-      icon: Printer,
-    },
-    {
-      title: "Outdoor Signage & Flex",
-      desc: "Large-format outdoor billboards, architectural digital signs, acrylic 3D letters, backlit flex banners, and vinyl plot production.",
-      tools: "AR Digital Sign",
-      badgeLight: "bg-orange-50 text-[#FD6F41] dark:bg-orange-950/40 dark:text-orange-400",
-      icon: Megaphone,
-    },
-    {
-      title: "Social Media & Ad Creatives",
-      desc: "High-conversion Facebook & Instagram banners, carousel storytelling, digital promotional campaigns, and photo retouching.",
-      tools: "Adobe Photoshop",
-      badgeLight: "bg-teal-50 text-teal-600 dark:bg-teal-950/40 dark:text-teal-400",
-      icon: Sparkles,
-    },
-  ];
+  const { services } = usePortfolioData();
 
   return (
     <section id="services" className="py-16 md:py-24 bg-white dark:bg-[#121110] border-b border-neutral-200/80 dark:border-neutral-800/80 transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Section Header matching reference */}
+        {/* Section Header */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
           <div>
             <span className="text-[#FD6F41] font-bold text-xs uppercase tracking-wider block mb-2 font-['Archivo',sans-serif]">
@@ -51,18 +43,19 @@ export const ServicesSection: React.FC = () => {
           </p>
         </div>
 
-        {/* 4 Service Cards Grid (Matching download.png) */}
+        {/* Service Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {services.map((srv, idx) => {
-            const Icon = srv.icon;
+            const Icon = ICON_MAP[srv.iconName] || PenTool;
+            const badgeClass = COLOR_THEME_MAP[srv.colorTheme] || COLOR_THEME_MAP.orange;
             return (
               <div
-                key={idx}
+                key={srv.id || idx}
                 className="bg-[#FFF9F6] dark:bg-[#1C1A18] border border-orange-100/80 dark:border-neutral-800 rounded-2xl p-6 sm:p-7 flex flex-col justify-between hover:shadow-xl hover:shadow-orange-500/10 hover:border-[#FD6F41]/40 transition-all duration-300 transform hover:-translate-y-1 group"
               >
                 <div>
-                  {/* Colorful Circular Icon Badge matching reference */}
-                  <div className={`w-14 h-14 rounded-2xl ${srv.badgeLight} flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300`}>
+                  {/* Colorful Circular Icon Badge */}
+                  <div className={`w-14 h-14 rounded-2xl ${badgeClass} flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300`}>
                     <Icon className="w-7 h-7" />
                   </div>
 

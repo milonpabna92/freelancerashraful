@@ -147,7 +147,7 @@ export const ContactSection: React.FC = () => {
                     {personalInfo.presentAddress}
                   </p>
                   <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                    AR Digital Sign · Near to Boro Bridge, Pabna
+                    {personalInfo.studioAddress || 'AR Digital Sign · Near to Boro Bridge, Pabna'}
                   </p>
                 </div>
               </div>

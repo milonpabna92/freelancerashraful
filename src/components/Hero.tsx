@@ -14,7 +14,7 @@ interface HeroProps {
   onOpenAdmin?: () => void;
 }
 
-export const Hero: React.FC<HeroProps> = ({ onOpenResume, onOpenAdmin }) => {
+export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
   const {
     personalInfo,
     customPhoto,
@@ -23,13 +23,13 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume, onOpenAdmin }) => {
   } = usePortfolioData();
 
   const activePhoto = customPhoto || '/user-photo.png';
-
-  // Secret: Double-click or hold Alt on the hero photo opens the hidden Admin Panel
-  const handlePhotoDoubleClick = (e: React.MouseEvent) => {
-    if (onOpenAdmin) {
-      onOpenAdmin();
-    }
-  };
+  const heroStats = personalInfo.heroStats && personalInfo.heroStats.length >= 3
+    ? personalInfo.heroStats
+    : [
+        { title: '8 Years Job', subtitle: 'Experience' },
+        { title: '650+ Projects', subtitle: 'Completed' },
+        { title: 'Online 24/7', subtitle: 'Client Support' },
+      ];
 
   return (
     <section className="relative overflow-hidden pt-10 pb-12 md:pt-16 md:pb-20 bg-[#FFF9F6] dark:bg-[#121110] transition-colors">
@@ -44,7 +44,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume, onOpenAdmin }) => {
             {/* "Hi, I'm" tag in signature warm orange */}
             <div className="mb-2">
               <span className="text-[#FD6F41] font-bold text-lg sm:text-xl font-['Archivo',sans-serif] tracking-normal">
-                Hi, I'm
+                {personalInfo.greeting || "Hi, I'm"}
               </span>
             </div>
 
@@ -106,14 +106,13 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume, onOpenAdmin }) => {
 
               {/* Signature Orange Arch (Half-circle / Arch shape matching reference) */}
               <div
-                onDoubleClick={handlePhotoDoubleClick}
                 className="relative w-[280px] sm:w-[340px] h-[350px] sm:h-[420px] rounded-t-full bg-gradient-to-t from-[#FD6F41] via-[#FD7E54] to-[#FFA07A] shadow-2xl shadow-orange-500/30 overflow-hidden flex items-end justify-center select-none"
                 title=""
               >
                 {/* User Cutout Photo with Black Suit, Glasses & Crossed Arms */}
                 <img
                   src={activePhoto}
-                  alt="Md. Ashraful Islam - Senior Graphic Designer"
+                  alt={`${personalInfo.name} - ${personalInfo.role}`}
                   className="relative z-10 w-full h-[105%] object-cover object-top hover:scale-105 transition-transform duration-500 ease-out"
                 />
               </div>
@@ -121,62 +120,66 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume, onOpenAdmin }) => {
               {/* Quick floating trust badge */}
               <div className="absolute -bottom-3 right-4 sm:right-6 bg-white dark:bg-[#1E1B18] border border-neutral-200/80 dark:border-neutral-800 rounded-2xl p-3 shadow-lg flex items-center gap-2.5 z-20">
                 <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-950/60 text-[#FD6F41] flex items-center justify-center font-bold text-xs font-['Archivo',sans-serif]">
-                  7+
+                  {personalInfo.badgeValue || '7+'}
                 </div>
                 <div className="text-left">
-                  <p className="text-xs font-bold text-[#111827] dark:text-white leading-tight font-['Archivo',sans-serif]">Years Active</p>
-                  <p className="text-[10px] text-neutral-500 dark:text-neutral-400">AR Digital Sign</p>
+                  <p className="text-xs font-bold text-[#111827] dark:text-white leading-tight font-['Archivo',sans-serif]">
+                    {personalInfo.badgeTitle || 'Years Active'}
+                  </p>
+                  <p className="text-[10px] text-neutral-500 dark:text-neutral-400">
+                    {personalInfo.badgeSubtitle || 'AR Digital Sign'}
+                  </p>
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Floating Horizontal Stat Bar (Matching the bottom pill card in reference download.png) */}
+        {/* Floating Horizontal Stat Bar */}
         <div className="mt-8 pt-4">
           <div className="max-w-4xl mx-auto bg-white dark:bg-[#1C1A18] border border-neutral-200/80 dark:border-neutral-800 rounded-2xl sm:rounded-full p-4 sm:py-4 sm:px-8 shadow-xl shadow-orange-500/5 grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-4 items-center justify-between">
-            {/* Stat 1: 8 Years Job Experience */}
+            {/* Stat 1 */}
             <div className="flex items-center gap-3.5 sm:justify-center">
               <div className="w-12 h-12 rounded-full bg-orange-50 dark:bg-orange-950/40 text-[#FD6F41] flex items-center justify-center shrink-0 shadow-xs">
                 <Award className="w-6 h-6" />
               </div>
               <div className="text-left">
                 <h4 className="text-sm sm:text-base font-extrabold text-[#111827] dark:text-white font-['Archivo',sans-serif] leading-tight">
-                  8 Years Job
+                  {heroStats[0]?.title || '8 Years Job'}
                 </h4>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">Experience</p>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">{heroStats[0]?.subtitle || 'Experience'}</p>
               </div>
             </div>
 
             {/* Divider for desktop */}
             <div className="hidden sm:block w-px h-8 bg-neutral-200 dark:bg-neutral-800 mx-auto"></div>
 
-            {/* Stat 2: 650+ Projects Completed */}
+            {/* Stat 2 */}
             <div className="flex items-center gap-3.5 sm:justify-center">
               <div className="w-12 h-12 rounded-full bg-orange-50 dark:bg-orange-950/40 text-[#FD6F41] flex items-center justify-center shrink-0 shadow-xs">
                 <CheckCircle className="w-6 h-6" />
               </div>
               <div className="text-left">
                 <h4 className="text-sm sm:text-base font-extrabold text-[#111827] dark:text-white font-['Archivo',sans-serif] leading-tight">
-                  650+ Projects
+                  {heroStats[1]?.title || '650+ Projects'}
                 </h4>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">Completed</p>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">{heroStats[1]?.subtitle || 'Completed'}</p>
               </div>
             </div>
 
             {/* Divider for desktop */}
             <div className="hidden sm:block w-px h-8 bg-neutral-200 dark:bg-neutral-800 mx-auto"></div>
 
-            {/* Stat 3: Online 24/7 Support */}
+            {/* Stat 3 */}
             <div className="flex items-center gap-3.5 sm:justify-center">
               <div className="w-12 h-12 rounded-full bg-orange-50 dark:bg-orange-950/40 text-[#FD6F41] flex items-center justify-center shrink-0 shadow-xs">
                 <Headphones className="w-6 h-6" />
               </div>
               <div className="text-left">
                 <h4 className="text-sm sm:text-base font-extrabold text-[#111827] dark:text-white font-['Archivo',sans-serif] leading-tight">
-                  Online 24/7
+                  {heroStats[2]?.title || 'Online 24/7'}
                 </h4>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">Client Support</p>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">{heroStats[2]?.subtitle || 'Client Support'}</p>
               </div>
             </div>
           </div>

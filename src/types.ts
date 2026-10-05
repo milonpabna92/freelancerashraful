@@ -20,7 +20,45 @@ export interface Project {
   createdAt?: string;
 }
 
+export interface ServiceItem {
+  id: string;
+  title: string;
+  desc: string;
+  tools: string;
+  iconName: 'PenTool' | 'Printer' | 'Megaphone' | 'Sparkles' | 'Palette' | 'Layers' | 'Image' | 'Monitor';
+  colorTheme: 'purple' | 'amber' | 'orange' | 'teal' | 'blue' | 'rose';
+}
+
+export interface SkillBarItem {
+  id: string;
+  name: string;
+  percentage: number;
+}
+
+export interface PrepressItem {
+  id: string;
+  title: string;
+  desc: string;
+}
+
+export interface HeroStatItem {
+  title: string;
+  subtitle: string;
+}
+
+export interface LanguageItem {
+  name: string;
+  level: string;
+  proficiency: number;
+}
+
+export interface HobbyItem {
+  name: string;
+  description: string;
+}
+
 export interface Experience {
+  id?: string;
   role: string;
   company: string;
   location: string;
@@ -32,6 +70,7 @@ export interface Experience {
 }
 
 export interface Education {
+  id?: string;
   degree: string;
   institute: string;
   board: string;
@@ -57,3 +96,4 @@ export interface ReferencePerson {
   location: string;
   relationship: string;
 }
+

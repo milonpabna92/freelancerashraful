@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { usePortfolioData } from '../context/PortfolioDataContext';
 import { ArrowUp, FileDown, ExternalLink } from 'lucide-react';
 
@@ -11,6 +11,107 @@ interface FooterProps {
 export const Footer: React.FC<FooterProps> = ({ onOpenResume, onOpenDeployGuide, onOpenAdmin }) => {
   const { personalInfo, downloadCv, isDownloading } = usePortfolioData();
 
+  // Secret Gesture on the footer dot (same as Navbar dot: 3 clicks -> 4-7s hold -> 3 clicks)
+  const stageRef = useRef<'FIRST_CLICKS' | 'WAIT_HOLD' | 'FINAL_CLICKS'>('FIRST_CLICKS');
+  const firstClicksRef = useRef(0);
+  const finalClicksRef = useRef(0);
+  const pointerDownTimeRef = useRef<number | null>(null);
+  const resetTimerRef = useRef<any>(null);
+  const holdFeedbackTimerRef = useRef<any>(null);
+  const holdExpiredTimerRef = useRef<any>(null);
+  const [dotVisualState, setDotVisualState] = useState<'normal' | 'holding_ready' | 'ready_for_final'>('normal');
+
+  const resetSecretSequence = () => {
+    stageRef.current = 'FIRST_CLICKS';
+    firstClicksRef.current = 0;
+    finalClicksRef.current = 0;
+    pointerDownTimeRef.current = null;
+    setDotVisualState('normal');
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    if (holdFeedbackTimerRef.current) clearTimeout(holdFeedbackTimerRef.current);
+    if (holdExpiredTimerRef.current) clearTimeout(holdExpiredTimerRef.current);
+  };
+
+  const scheduleInactivityReset = (ms = 5000) => {
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    resetTimerRef.current = setTimeout(() => {
+      resetSecretSequence();
+    }, ms);
+  };
+
+  const handleDotPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    pointerDownTimeRef.current = Date.now();
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    if (holdFeedbackTimerRef.current) clearTimeout(holdFeedbackTimerRef.current);
+    if (holdExpiredTimerRef.current) clearTimeout(holdExpiredTimerRef.current);
+
+    if (stageRef.current === 'WAIT_HOLD' || (stageRef.current === 'FIRST_CLICKS' && firstClicksRef.current >= 2)) {
+      holdFeedbackTimerRef.current = setTimeout(() => {
+        setDotVisualState('holding_ready');
+      }, 4000);
+      holdExpiredTimerRef.current = setTimeout(() => {
+        setDotVisualState('normal');
+      }, 7500);
+    }
+  };
+
+  const handleDotPointerUp = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (holdFeedbackTimerRef.current) clearTimeout(holdFeedbackTimerRef.current);
+    if (holdExpiredTimerRef.current) clearTimeout(holdExpiredTimerRef.current);
+
+    if (pointerDownTimeRef.current === null) return;
+    const holdDuration = Date.now() - pointerDownTimeRef.current;
+    pointerDownTimeRef.current = null;
+
+    if (stageRef.current === 'FINAL_CLICKS') {
+      if (holdDuration < 900) {
+        finalClicksRef.current += 1;
+        if (finalClicksRef.current >= 3) {
+          resetSecretSequence();
+          onOpenAdmin();
+        } else {
+          scheduleInactivityReset(5000);
+        }
+      } else {
+        resetSecretSequence();
+      }
+      return;
+    }
+
+    if (
+      (stageRef.current === 'WAIT_HOLD' || (stageRef.current === 'FIRST_CLICKS' && firstClicksRef.current >= 2)) &&
+      holdDuration >= 3800 &&
+      holdDuration <= 7500
+    ) {
+      stageRef.current = 'FINAL_CLICKS';
+      finalClicksRef.current = 0;
+      setDotVisualState('ready_for_final');
+      scheduleInactivityReset(6000);
+      return;
+    }
+
+    if (holdDuration < 900) {
+      if (stageRef.current === 'FIRST_CLICKS') {
+        firstClicksRef.current += 1;
+        if (firstClicksRef.current >= 3) {
+          stageRef.current = 'WAIT_HOLD';
+          scheduleInactivityReset(6000);
+        } else {
+          scheduleInactivityReset(3500);
+        }
+      } else if (stageRef.current === 'WAIT_HOLD') {
+        firstClicksRef.current = 3;
+        scheduleInactivityReset(6000);
+      }
+    } else {
+      resetSecretSequence();
+    }
+  };
+
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -20,12 +121,27 @@ export const Footer: React.FC<FooterProps> = ({ onOpenResume, onOpenDeployGuide,
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 pb-8 border-b border-neutral-200/60 dark:border-neutral-800">
           <div>
-            <div className="flex items-center gap-1 mb-1">
-              <span className="text-xl font-black text-[#111827] dark:text-white font-['Archivo',sans-serif]">Ashraful</span>
-              <span className="text-[#FD6F41] text-2xl leading-none">.</span>
+            <div className="flex items-center gap-0.5 mb-1 select-none">
+              <span className="text-xl font-black text-[#111827] dark:text-white font-['Archivo',sans-serif]">
+                {personalInfo.brandName || 'Ashraful'}
+              </span>
+              <span
+                onPointerDown={handleDotPointerDown}
+                onPointerUp={handleDotPointerUp}
+                onContextMenu={(e) => e.preventDefault()}
+                className={`text-2xl leading-none cursor-default select-none px-0.5 transition-all duration-200 ${
+                  dotVisualState === 'holding_ready'
+                    ? 'text-emerald-500 scale-150'
+                    : dotVisualState === 'ready_for_final'
+                    ? 'text-amber-500 scale-125'
+                    : 'text-[#FD6F41]'
+                }`}
+              >
+                .
+              </span>
             </div>
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              {personalInfo.role} · Pre-Press & Offset Printing Specialist
+              {personalInfo.role} · {personalInfo.footerSubtitle || 'Pre-Press & Offset Printing Specialist'}
             </p>
           </div>
 
@@ -68,12 +184,7 @@ export const Footer: React.FC<FooterProps> = ({ onOpenResume, onOpenDeployGuide,
 
         <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-neutral-500 dark:text-neutral-400">
           <div className="flex flex-wrap items-center gap-3">
-            {/* Secret double-click on copyright triggers admin panel */}
-            <span
-              onDoubleClick={onOpenAdmin}
-              className="select-none cursor-default"
-              title=""
-            >
+            <span className="select-none cursor-default">
               © {new Date().getFullYear()} {personalInfo.name}
             </span>
             <span aria-hidden="true">·</span>

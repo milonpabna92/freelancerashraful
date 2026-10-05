@@ -1,52 +1,18 @@
 import React from 'react';
+import { usePortfolioData } from '../context/PortfolioDataContext';
 import { Printer } from 'lucide-react';
 
 export const SkillsSection: React.FC = () => {
-  const leftSkills = [
-    { name: "Adobe Illustrator (Expert)", percentage: 98 },
-    { name: "Adobe Photoshop (Expert)", percentage: 95 },
-    { name: "Graphic Design & Brand Identity", percentage: 96 },
-    { name: "Social Media Creative Design", percentage: 93 },
-  ];
+  const { skillBars, prepressChecklist, personalInfo } = usePortfolioData();
 
-  const rightSkills = [
-    { name: "Offset Printing Setup & Die-lines", percentage: 95 },
-    { name: "Color Knowledge & CMYK Separation", percentage: 96 },
-    { name: "Commercial Signage & Billboards", percentage: 92 },
-    { name: "Photo Editing & High-End Retouching", percentage: 90 },
-  ];
-
-  const prepressChecklist = [
-    {
-      title: "CMYK Separation & Ink Limits",
-      desc: "Raster & vector artwork converted to CMYK (FOGRA39 / GRACoL) with total ink limit (TIC) kept under 300% to prevent press smearing."
-    },
-    {
-      title: "Bleed (3mm–5mm) & Safe Margins",
-      desc: "Standard 3mm–5mm bleed past trim boundaries to eliminate white edges during precision guillotining, safety margins $\\ge 4\\text{mm}$."
-    },
-    {
-      title: "Packaging Die-Lines & Creases",
-      desc: "Dedicated spot color vector layers marked as 'Non-Printing' with clear separation between cut lines, creases, and perforations."
-    },
-    {
-      title: "Overprint & Micro-Trapping",
-      desc: "Enforcing 100% K overprint on fine body typography and setting 0.25pt traps on contrasting color intersections."
-    },
-    {
-      title: "Spot UV & Foil Stamping Blocks",
-      desc: "Isolated 100% solid vector separation plates for gold/silver foil stamping dies and spot gloss varnish finishes."
-    },
-    {
-      title: "Billboard & Signage Scaling",
-      desc: "Calibrated raster DPI and 1:1 vector paths for large-format outdoor billboards, backlit acrylic, and flex installations at AR Digital Sign."
-    }
-  ];
+  const midPoint = Math.ceil(skillBars.length / 2);
+  const leftSkills = skillBars.slice(0, midPoint);
+  const rightSkills = skillBars.slice(midPoint);
 
   return (
     <section id="skills" className="py-16 md:py-24 bg-[#FFF9F6] dark:bg-[#121110] border-b border-neutral-200/80 dark:border-neutral-800/80 transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Section Header matching download.png */}
+        {/* Section Header */}
         <div className="text-center max-w-2xl mx-auto mb-14">
           <span className="text-[#FD6F41] font-bold text-xs uppercase tracking-wider block mb-2 font-['Archivo',sans-serif]">
             Why Choose Me
@@ -59,12 +25,12 @@ export const SkillsSection: React.FC = () => {
           </p>
         </div>
 
-        {/* 2-Column Progress Bar Grid (Exact match to download.png) */}
+        {/* 2-Column Progress Bar Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6 max-w-5xl mx-auto mb-16">
           {/* Left Column */}
           <div className="space-y-6">
-            {leftSkills.map((skill) => (
-              <div key={skill.name}>
+            {leftSkills.map((skill, idx) => (
+              <div key={skill.id || idx}>
                 <div className="flex justify-between items-center text-xs sm:text-sm font-bold mb-2 font-['Archivo',sans-serif]">
                   <span className="text-[#111827] dark:text-neutral-200">{skill.name}</span>
                   <span className="text-[#FD6F41] font-bold font-mono tabular-nums">{skill.percentage}%</span>
@@ -81,8 +47,8 @@ export const SkillsSection: React.FC = () => {
 
           {/* Right Column */}
           <div className="space-y-6">
-            {rightSkills.map((skill) => (
-              <div key={skill.name}>
+            {rightSkills.map((skill, idx) => (
+              <div key={skill.id || idx}>
                 <div className="flex justify-between items-center text-xs sm:text-sm font-bold mb-2 font-['Archivo',sans-serif]">
                   <span className="text-[#111827] dark:text-neutral-200">{skill.name}</span>
                   <span className="text-[#FD6F41] font-bold font-mono tabular-nums">{skill.percentage}%</span>
@@ -111,13 +77,13 @@ export const SkillsSection: React.FC = () => {
               </h3>
             </div>
             <p className="text-xs text-neutral-500 dark:text-neutral-400 max-w-md">
-              How Ashraful Islam guarantees zero press-stops, color shifts, or misalignments when handing off vector artwork to commercial offset printers and large format plotters.
+              How {personalInfo.name} guarantees zero press-stops, color shifts, or misalignments when handing off vector artwork to commercial offset printers and large format plotters.
             </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {prepressChecklist.map((item, i) => (
-              <div key={i} className="p-4 rounded-xl bg-[#FFF9F6] dark:bg-[#141210] border border-orange-100/70 dark:border-neutral-800">
+              <div key={item.id || i} className="p-4 rounded-xl bg-[#FFF9F6] dark:bg-[#141210] border border-orange-100/70 dark:border-neutral-800">
                 <div className="flex items-center gap-2 text-sm font-bold font-['Archivo',sans-serif] text-[#111827] dark:text-neutral-200 mb-1.5">
                   <span className="w-5 h-5 rounded-full bg-orange-100 dark:bg-orange-950/60 text-[#FD6F41] flex items-center justify-center text-xs font-mono font-bold">
                     {i + 1}
