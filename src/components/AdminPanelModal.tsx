@@ -8,6 +8,10 @@ import {
   saveSupabaseConfig,
   testSupabaseConnection,
   saveSettingsToSupabase,
+  loadSettingsFromSupabase,
+  sha256Hash,
+  createDatabaseOtpChallenge,
+  verifyAdminPinResetOtp,
   SUPABASE_SETUP_SQL
 } from '../lib/supabase';
 import {
@@ -39,7 +43,9 @@ import {
   Layers,
   Sparkles,
   Award,
-  GraduationCap
+  GraduationCap,
+  Mail,
+  ShieldAlert
 } from 'lucide-react';
 
 interface AdminPanelModalProps {
@@ -139,6 +145,28 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
   const [pinMessage, setPinMessage] = useState<{ type: 'idle' | 'success' | 'error'; text: string }>({
     type: 'idle',
     text: '',
+  });
+
+  // Secure PIN Recovery (OTP & Master Recovery Key) State
+  const [isRecoveryOpen, setIsRecoveryOpen] = useState(false);
+  const [recoveryMethod, setRecoveryMethod] = useState<'otp' | 'master_key'>('otp');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpCodeInput, setOtpCodeInput] = useState('');
+  const [masterKeyInput, setMasterKeyInput] = useState('');
+  const [recoveryNewPin, setRecoveryNewPin] = useState('');
+  const [recoveryConfirmPin, setRecoveryConfirmPin] = useState('');
+  const [recoveryVerifying, setRecoveryVerifying] = useState(false);
+  const [recoveryStatus, setRecoveryStatus] = useState<{ type: 'idle' | 'success' | 'error'; text: string }>({
+    type: 'idle',
+    text: '',
+  });
+
+  // Master Recovery Key Setup State (inside Security tab)
+  const [newMasterKey, setNewMasterKey] = useState('');
+  const [showMasterKey, setShowMasterKey] = useState(false);
+  const [hasCustomMasterKey, setHasCustomMasterKey] = useState(() => {
+    return Boolean(localStorage.getItem('ashraful_master_recovery_hash'));
   });
 
   // Project Management State
@@ -324,24 +352,185 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
     setTimeout(() => setPinMessage({ type: 'idle', text: '' }), 5000);
   };
 
-  // Reset PIN to 1234
-  const handleResetPin = async () => {
-    setStoredPin('1234');
-    try {
-      localStorage.setItem('ashraful_admin_pin', '1234');
-    } catch (e) {}
+  // Request OTP to Email & Supabase Database Table
+  const handleSendRecoveryOtp = async () => {
+    setOtpSending(true);
+    setRecoveryStatus({ type: 'idle', text: '' });
 
-    const supabaseConfig = getSupabaseConfig();
-    if (supabaseConfig.connected) {
-      await saveSettingsToSupabase({ adminPin: '1234' });
+    const adminEmail = personalInfo.email || 'milondj5@gmail.com';
+    const res = await createDatabaseOtpChallenge(adminEmail);
+
+    setOtpSending(false);
+    if (res.success) {
+      setOtpSent(true);
+      setRecoveryStatus({
+        type: 'success',
+        text: res.message,
+      });
+    } else {
+      setRecoveryStatus({
+        type: 'error',
+        text: res.message || 'ওটিপি পাঠাতে ব্যর্থ হয়েছে। আপনি মাস্টার রিকভারি কী (Master Key) ব্যবহার করতে পারেন।',
+      });
+    }
+  };
+
+  // Verify OTP or Master Recovery Key to Reset PIN
+  const handleExecuteSecurePinReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryStatus({ type: 'idle', text: '' });
+
+    if (!recoveryNewPin || recoveryNewPin.trim().length < 4) {
+      setRecoveryStatus({ type: 'error', text: 'নতুন পিন কমপক্ষে ৪ সংখ্যার হতে হবে!' });
+      return;
     }
 
-    setPinForm({ currentPin: '', newPin: '', confirmPin: '' });
+    if (recoveryNewPin.trim() !== recoveryConfirmPin.trim()) {
+      setRecoveryStatus({ type: 'error', text: 'নতুন পিন এবং কনফার্ম পিন মেলেনি!' });
+      return;
+    }
+
+    setRecoveryVerifying(true);
+    let isVerified = false;
+
+    try {
+      if (recoveryMethod === 'otp') {
+        const code = otpCodeInput.trim();
+        if (!code || code.length < 4) {
+          setRecoveryStatus({ type: 'error', text: 'দয়া করে আপনার ইমেইল বা ডাটাবেসে প্রাপ্ত ৬-সংখ্যার ওটিপি (OTP) কোডটি লিখুন।' });
+          setRecoveryVerifying(false);
+          return;
+        }
+
+        // 1. Check against Database OTP Hash first
+        const inputHash = await sha256Hash(code);
+        const settingsRes = await loadSettingsFromSupabase();
+        const savedOtpHash = settingsRes.data?.activeResetOtpHash;
+        const savedOtpExpires = settingsRes.data?.activeResetOtpExpires;
+
+        if (savedOtpHash && inputHash === savedOtpHash) {
+          if (!savedOtpExpires || new Date(savedOtpExpires).getTime() > Date.now()) {
+            isVerified = true;
+          } else {
+            setRecoveryStatus({ type: 'error', text: 'ওটিপি কোডের মেয়াদ (১০ মিনিট) শেষ হয়ে গেছে! নতুন ওটিপি পাঠান।' });
+            setRecoveryVerifying(false);
+            return;
+          }
+        }
+
+        // 2. If not matched via DB hash, verify via Supabase Auth Email OTP
+        if (!isVerified) {
+          const adminEmail = personalInfo.email || 'milondj5@gmail.com';
+          const emailOtpRes = await verifyAdminPinResetOtp(adminEmail, code);
+          if (emailOtpRes.success) {
+            isVerified = true;
+          }
+        }
+
+        if (!isVerified) {
+          setRecoveryStatus({
+            type: 'error',
+            text: 'ভুল ওটিপি (OTP) কোড! সঠিক কোড দিন অথবা মাস্টার রিকভারি কী ব্যবহার করুন।',
+          });
+          setRecoveryVerifying(false);
+          return;
+        }
+      } else {
+        // Method 2: Master Recovery Key Verification
+        const keyInput = masterKeyInput.trim();
+        if (!keyInput) {
+          setRecoveryStatus({ type: 'error', text: 'দয়া করে আপনার মাস্টার রিকভারি কী (Master Recovery Key) লিখুন।' });
+          setRecoveryVerifying(false);
+          return;
+        }
+
+        const inputKeyHash = await sha256Hash(keyInput);
+        let storedHash = localStorage.getItem('ashraful_master_recovery_hash') || '';
+
+        if (!storedHash) {
+          const settingsRes = await loadSettingsFromSupabase();
+          if (settingsRes.data?.masterRecoveryKeyHash) {
+            storedHash = settingsRes.data.masterRecoveryKeyHash;
+          }
+        }
+
+        if (storedHash) {
+          if (inputKeyHash === storedHash) {
+            isVerified = true;
+          }
+        } else {
+          // If no custom Master Key was set yet, allow the owner's Supabase Anon API Key (last 12+ chars or full key) as proof of ownership
+          const currentSupaKey = getSupabaseConfig().anonKey.trim();
+          if (keyInput.length >= 12 && currentSupaKey.endsWith(keyInput)) {
+            isVerified = true;
+          }
+        }
+
+        if (!isVerified) {
+          setRecoveryStatus({
+            type: 'error',
+            text: 'ভুল মাস্টার রিকভারি কী! সঠিক কী দিন অথবা ওটিপি (OTP) পদ্ধতি ব্যবহার করুন।',
+          });
+          setRecoveryVerifying(false);
+          return;
+        }
+      }
+
+      // Verification succeeded! Update PIN
+      const finalPin = recoveryNewPin.trim();
+      setStoredPin(finalPin);
+      try {
+        localStorage.setItem('ashraful_admin_pin', finalPin);
+      } catch (e) {}
+
+      await saveSettingsToSupabase({
+        adminPin: finalPin,
+        activeResetOtpHash: null,
+        activeResetOtpExpires: null,
+      });
+
+      setRecoveryVerifying(false);
+      setIsRecoveryOpen(false);
+      setOtpSent(false);
+      setOtpCodeInput('');
+      setMasterKeyInput('');
+      setRecoveryNewPin('');
+      setRecoveryConfirmPin('');
+      setPinError(false);
+      setIsAuthenticated(true);
+      setUploadStatus({
+        type: 'success',
+        text: '',
+        message: `সিকিউরিটি যাচাই সফল! আপনার নতুন পিন (${finalPin}) সেট করা হয়েছে এবং লগইন সম্পন্ন হয়েছে।`,
+      } as any);
+      setTimeout(() => setUploadStatus({ type: 'idle', message: '' }), 5000);
+    } catch (err: any) {
+      setRecoveryVerifying(false);
+      setRecoveryStatus({ type: 'error', text: 'যাচাইকরণে ত্রুটি হয়েছে। আবার চেষ্টা করুন।' });
+    }
+  };
+
+  // Save Custom Master Recovery Key (inside authenticated Security tab)
+  const handleSaveMasterKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMasterKey || newMasterKey.trim().length < 6) {
+      setPinMessage({ type: 'error', text: 'মাস্টার রিকভারি কী কমপক্ষে ৬ অক্ষরের হতে হবে!' });
+      return;
+    }
+
+    const hash = await sha256Hash(newMasterKey.trim());
+    try {
+      localStorage.setItem('ashraful_master_recovery_hash', hash);
+    } catch (err) {}
+
+    await saveSettingsToSupabase({ masterRecoveryKeyHash: hash });
+    setHasCustomMasterKey(true);
+    setNewMasterKey('');
     setPinMessage({
       type: 'success',
-      text: 'পিন রিসেট করে ডিফল্ট পিন (1234) হিসেবে সেট করা হয়েছে।',
+      text: 'আপনার গোপন মাস্টার রিকভারি কী (Master Recovery Key) সফলভাবে এনক্রিপ্ট করে সংরক্ষণ করা হয়েছে!',
     });
-    setTimeout(() => setPinMessage({ type: 'idle', text: '' }), 4000);
+    setTimeout(() => setPinMessage({ type: 'idle', text: '' }), 5000);
   };
 
   // -------------------------------------------------------------
@@ -582,62 +771,248 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
 
         {/* Lock Screen if Not Authenticated */}
         {!isAuthenticated ? (
-          <div className="p-8 sm:p-12 flex flex-col items-center justify-center text-center">
-            <div className="w-16 h-16 rounded-3xl bg-orange-100 dark:bg-orange-950/50 text-[#FD6F41] flex items-center justify-center mb-5 shadow-inner">
-              <Lock className="w-8 h-8" />
-            </div>
-            <h3 className="text-xl font-black text-[#111827] dark:text-white font-['Archivo',sans-serif] mb-2">
-              অ্যাডমিন অ্যাক্সেস লক করা
-            </h3>
-            <p className="text-xs sm:text-sm text-neutral-600 dark:text-neutral-400 max-w-sm mb-6">
-              {storedPin === '1234' ? (
-                <>
-                  প্যানেলে প্রবেশ করতে আপনার অ্যাডমিন পিন দিন। ডিফল্ট পিন: <code className="px-2 py-0.5 rounded bg-orange-100 dark:bg-orange-950/50 text-[#FD6F41] font-mono font-bold">1234</code>
-                </>
-              ) : (
-                'প্যানেলে প্রবেশ করতে আপনার ব্যক্তিগত সিক্রেট অ্যাডমিন পিন দিন।'
-              )}
-            </p>
-
-            <form onSubmit={handlePinSubmit} className="w-full max-w-xs space-y-3">
-              <input
-                type="password"
-                maxLength={16}
-                value={pinInput}
-                onChange={(e) => {
-                  setPinInput(e.target.value);
-                  setPinError(false);
-                }}
-                placeholder="পিন লিখুন..."
-                autoFocus
-                className="w-full px-4 py-3 text-center text-lg font-bold tracking-widest rounded-2xl border border-neutral-300 dark:border-neutral-700 bg-[#FFF9F6] dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-[#FD6F41]"
-              />
-
-              {pinError && (
-                <div className="text-xs text-rose-500 font-semibold space-y-1">
-                  <p className="flex items-center justify-center gap-1">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    <span>ভুল পিন! দয়া করে সঠিক পিন চেষ্টা করুন।</span>
-                  </p>
-                  {storedPin !== '1234' && (
-                    <button
-                      type="button"
-                      onClick={handleResetPin}
-                      className="text-neutral-500 hover:text-[#FD6F41] underline cursor-pointer text-[11px]"
-                    >
-                      পিন ভুলে গেছেন? ডিফল্ট পিন (1234) এ রিসেট করতে ক্লিক করুন
-                    </button>
-                  )}
+          <div className="p-6 sm:p-10 flex flex-col items-center justify-center text-center overflow-y-auto">
+            {!isRecoveryOpen ? (
+              <>
+                <div className="w-16 h-16 rounded-3xl bg-orange-100 dark:bg-orange-950/50 text-[#FD6F41] flex items-center justify-center mb-5 shadow-inner">
+                  <Lock className="w-8 h-8" />
                 </div>
-              )}
+                <h3 className="text-xl font-black text-[#111827] dark:text-white font-['Archivo',sans-serif] mb-2">
+                  অ্যাডমিন অ্যাক্সেস লক করা
+                </h3>
+                <p className="text-xs sm:text-sm text-neutral-600 dark:text-neutral-400 max-w-sm mb-6">
+                  {storedPin === '1234' ? (
+                    <>
+                      প্যানেলে প্রবেশ করতে আপনার অ্যাডমিন পিন দিন। ডিফল্ট পিন: <code className="px-2 py-0.5 rounded bg-orange-100 dark:bg-orange-950/50 text-[#FD6F41] font-mono font-bold">1234</code>
+                    </>
+                  ) : (
+                    'প্যানেলে প্রবেশ করতে আপনার ব্যক্তিগত সিক্রেট অ্যাডমিন পিন দিন।'
+                  )}
+                </p>
 
-              <button
-                type="submit"
-                className="w-full py-3 text-sm font-bold text-white bg-[#FD6F41] hover:bg-[#E55B2F] rounded-2xl shadow-lg shadow-orange-500/25 transition-all cursor-pointer font-['Archivo',sans-serif]"
-              >
-                লগইন করুন
-              </button>
-            </form>
+                <form onSubmit={handlePinSubmit} className="w-full max-w-xs space-y-3">
+                  <input
+                    type="password"
+                    maxLength={16}
+                    value={pinInput}
+                    onChange={(e) => {
+                      setPinInput(e.target.value);
+                      setPinError(false);
+                    }}
+                    placeholder="পিন লিখুন..."
+                    autoFocus
+                    className="w-full px-4 py-3 text-center text-lg font-bold tracking-widest rounded-2xl border border-neutral-300 dark:border-neutral-700 bg-[#FFF9F6] dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-[#FD6F41]"
+                  />
+
+                  {pinError && (
+                    <div className="text-xs text-rose-500 font-semibold space-y-2 pt-1">
+                      <p className="flex items-center justify-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        <span>ভুল পিন! দয়া করে সঠিক পিন চেষ্টা করুন।</span>
+                      </p>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    className="w-full py-3 text-sm font-bold text-white bg-[#FD6F41] hover:bg-[#E55B2F] rounded-2xl shadow-lg shadow-orange-500/25 transition-all cursor-pointer font-['Archivo',sans-serif]"
+                  >
+                    লগইন করুন
+                  </button>
+
+                  {storedPin !== '1234' && (
+                    <div className="pt-3 border-t border-neutral-200/70 dark:border-neutral-800">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsRecoveryOpen(true);
+                          setRecoveryStatus({ type: 'idle', text: '' });
+                        }}
+                        className="inline-flex items-center gap-1.5 text-xs font-bold text-neutral-500 hover:text-[#FD6F41] transition-colors cursor-pointer"
+                      >
+                        <KeyRound className="w-3.5 h-3.5" />
+                        <span>পিন ভুলে গেছেন? ইমেইল ওটিপি / মাস্টার কী দিয়ে রিকভার করুন</span>
+                      </button>
+                    </div>
+                  )}
+                </form>
+              </>
+            ) : (
+              /* SECURE MULTI-LAYER PIN RECOVERY SCREEN */
+              <div className="w-full max-w-md text-left bg-[#FFF9F6] dark:bg-[#141210] border border-orange-200/80 dark:border-neutral-800 rounded-3xl p-5 sm:p-7 shadow-xl space-y-5">
+                <div className="flex items-start justify-between gap-3 pb-3 border-b border-orange-100 dark:border-neutral-800">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2.5 rounded-2xl bg-orange-100 dark:bg-orange-950/60 text-[#FD6F41]">
+                      <ShieldAlert className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-[#111827] dark:text-white font-['Archivo',sans-serif]">
+                        সুরক্ষিত পিন রিকভারি (2FA Verification)
+                      </h3>
+                      <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                        মালিকানা যাচাই ছাড়া কেউ পিন রিসেট করতে পারবে না
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsRecoveryOpen(false)}
+                    className="text-xs font-bold text-neutral-500 hover:text-neutral-900 dark:hover:text-white px-2.5 py-1 rounded-lg bg-neutral-100 dark:bg-neutral-800 cursor-pointer"
+                  >
+                    ফিরে যান
+                  </button>
+                </div>
+
+                {/* Recovery Method Switcher */}
+                <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-neutral-200/70 dark:bg-neutral-900">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRecoveryMethod('otp');
+                      setRecoveryStatus({ type: 'idle', text: '' });
+                    }}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      recoveryMethod === 'otp'
+                        ? 'bg-[#FD6F41] text-white shadow-xs'
+                        : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900'
+                    }`}
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    <span>ইমেইল ও ডাটাবেস OTP</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRecoveryMethod('master_key');
+                      setRecoveryStatus({ type: 'idle', text: '' });
+                    }}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      recoveryMethod === 'master_key'
+                        ? 'bg-[#FD6F41] text-white shadow-xs'
+                        : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900'
+                    }`}
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                    <span>মাস্টার রিকভারি কী</span>
+                  </button>
+                </div>
+
+                {recoveryStatus.text && (
+                  <div
+                    className={`p-3.5 rounded-2xl text-xs font-semibold flex items-start gap-2.5 leading-relaxed ${
+                      recoveryStatus.type === 'success'
+                        ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                        : 'bg-rose-50 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                    }`}
+                  >
+                    {recoveryStatus.type === 'success' ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    )}
+                    <span>{recoveryStatus.text}</span>
+                  </div>
+                )}
+
+                <form onSubmit={handleExecuteSecurePinReset} className="space-y-4">
+                  {recoveryMethod === 'otp' ? (
+                    <div className="space-y-3">
+                      <div className="p-3.5 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <span className="text-[10px] uppercase font-bold text-neutral-400 block">
+                            অ্যাডমিন ভেরিফাইড ইমেইল ও ডাটাবেস
+                          </span>
+                          <p className="text-xs font-bold text-neutral-800 dark:text-neutral-200 truncate">
+                            {personalInfo.email || 'milondj5@gmail.com'}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleSendRecoveryOtp}
+                          disabled={otpSending}
+                          className="px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-[#FD6F41] hover:bg-[#E55B2F] disabled:opacity-50 shrink-0 cursor-pointer shadow-xs"
+                        >
+                          {otpSending ? 'পাঠানো হচ্ছে...' : otpSent ? 'আবার OTP পাঠান' : 'OTP কোড পাঠান'}
+                        </button>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300 mb-1">
+                          ৬-সংখ্যার ওটিপি কোড (OTP Code) <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={otpCodeInput}
+                          onChange={(e) => setOtpCodeInput(e.target.value)}
+                          placeholder="যেমন: 482910 (ইমেইল বা Supabase টেবিল থেকে)"
+                          className="w-full px-4 py-2.5 text-sm font-mono font-bold tracking-widest text-center rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-[#FD6F41]"
+                        />
+                        <p className="text-[11px] text-neutral-500 mt-1 leading-normal">
+                          * ওটিপি কোডটি আপনার ইমেইলে এবং আপনার <strong>Supabase Dashboard &rarr; Table Editor &rarr; admin_otp_requests</strong> টেবিলে পাঠানো হয়।
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300">
+                        আপনার গোপন মাস্টার রিকভারি কী (Master Recovery Key) <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="password"
+                        required
+                        value={masterKeyInput}
+                        onChange={(e) => setMasterKeyInput(e.target.value)}
+                        placeholder="আপনার গোপন মাস্টার রিকভারি পাসওয়ার্ড লিখুন..."
+                        className="w-full px-4 py-2.5 text-xs sm:text-sm font-mono rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-[#FD6F41]"
+                      />
+                      <p className="text-[11px] text-neutral-500 leading-normal">
+                        {hasCustomMasterKey
+                          ? 'আপনার সেট করা গোপন মাস্টার রিকভারি কী-টি দিন।'
+                          : 'টিপস: আপনি যদি আলাদা মাস্টার কী সেট না করে থাকেন, তবে আপনার Supabase API Key-এর শেষের কমপক্ষে ১২টি অক্ষর দিয়েও মালিকানা যাচাই করতে পারবেন।'}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-orange-100 dark:border-neutral-800">
+                    <div>
+                      <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300 mb-1">
+                        নতুন পিন সেট করুন (New PIN) *
+                      </label>
+                      <input
+                        type="password"
+                        required
+                        value={recoveryNewPin}
+                        onChange={(e) => setRecoveryNewPin(e.target.value)}
+                        placeholder="নতুন পিন (৪+ সংখ্যা)"
+                        className="w-full px-3.5 py-2 text-xs font-mono rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300 mb-1">
+                        পিন নিশ্চিত করুন (Confirm) *
+                      </label>
+                      <input
+                        type="password"
+                        required
+                        value={recoveryConfirmPin}
+                        onChange={(e) => setRecoveryConfirmPin(e.target.value)}
+                        placeholder="পুনরায় নতুন পিন দিন"
+                        className="w-full px-3.5 py-2 text-xs font-mono rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={recoveryVerifying}
+                    className="w-full py-3 text-xs sm:text-sm font-bold text-white bg-[#FD6F41] hover:bg-[#E55B2F] disabled:opacity-50 rounded-2xl shadow-lg shadow-orange-500/25 transition-all cursor-pointer font-['Archivo',sans-serif]"
+                  >
+                    {recoveryVerifying ? 'যাচাই করা হচ্ছে...' : 'মালিকানা যাচাই করে নতুন পিন সেভ করুন'}
+                  </button>
+                </form>
+              </div>
+            )}
           </div>
         ) : (
           /* Authenticated Admin Tabs */
@@ -1696,16 +2071,12 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
                       </div>
                     </div>
 
-                    {storedPin !== '1234' && (
-                      <button
-                        type="button"
-                        onClick={handleResetPin}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-neutral-600 dark:text-neutral-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer font-['Archivo',sans-serif]"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        <span>ডিফল্ট পিনে (1234) রিসেট করুন</span>
-                      </button>
-                    )}
+                    <div className="text-right">
+                      <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-3 py-1.5 rounded-xl border border-emerald-200 dark:border-emerald-800 inline-flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        <span>২-স্তরের ওটিপি ও মাস্টার কী সুরক্ষা সক্রিয়</span>
+                      </span>
+                    </div>
                   </div>
 
                   {/* Feedback Message */}
@@ -1722,87 +2093,151 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
                     </div>
                   )}
 
-                  {/* PIN Change Form */}
-                  <form onSubmit={handleChangePin} className="p-6 rounded-2xl bg-white dark:bg-[#1E1B18] border border-neutral-200 dark:border-neutral-800 space-y-4 max-w-lg">
-                    <div>
-                      <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300 mb-1.5 font-['Archivo',sans-serif]">
-                        বর্তমান পিন (Current PIN) <span className="text-rose-500">*</span>
-                      </label>
-                      <div className="relative">
-                        <input
-                          type={showCurrentPin ? 'text' : 'password'}
-                          required
-                          value={pinForm.currentPin}
-                          onChange={(e) => setPinForm({ ...pinForm, currentPin: e.target.value })}
-                          placeholder="বর্তমান পিনটি লিখুন (ডিফল্ট: 1234)"
-                          className="w-full px-4 py-2.5 pr-10 text-xs sm:text-sm rounded-xl border border-neutral-300 dark:border-neutral-700 bg-[#FFF9F6] dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 font-mono focus:outline-none focus:ring-2 focus:ring-[#FD6F41]"
-                        />
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* PIN Change Form */}
+                    <form onSubmit={handleChangePin} className="p-6 rounded-2xl bg-white dark:bg-[#1E1B18] border border-neutral-200 dark:border-neutral-800 space-y-4">
+                      <h4 className="text-sm font-black text-[#111827] dark:text-white font-['Archivo',sans-serif] pb-2 border-b border-neutral-100 dark:border-neutral-800">
+                        ১. অ্যাডমিন পিন পরিবর্তন করুন
+                      </h4>
+                      <div>
+                        <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300 mb-1.5 font-['Archivo',sans-serif]">
+                          বর্তমান পিন (Current PIN) <span className="text-rose-500">*</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showCurrentPin ? 'text' : 'password'}
+                            required
+                            value={pinForm.currentPin}
+                            onChange={(e) => setPinForm({ ...pinForm, currentPin: e.target.value })}
+                            placeholder="বর্তমান পিনটি লিখুন (ডিফল্ট: 1234)"
+                            className="w-full px-4 py-2.5 pr-10 text-xs sm:text-sm rounded-xl border border-neutral-300 dark:border-neutral-700 bg-[#FFF9F6] dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 font-mono focus:outline-none focus:ring-2 focus:ring-[#FD6F41]"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowCurrentPin(!showCurrentPin)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+                          >
+                            {showCurrentPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300 mb-1.5 font-['Archivo',sans-serif]">
+                          নতুন পছন্দমতো পিন (New PIN) <span className="text-rose-500">*</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showNewPin ? 'text' : 'password'}
+                            required
+                            value={pinForm.newPin}
+                            onChange={(e) => setPinForm({ ...pinForm, newPin: e.target.value })}
+                            placeholder="কমপক্ষে ৪ সংখ্যার নতুন পিন (e.g. 7890)"
+                            className="w-full px-4 py-2.5 pr-10 text-xs sm:text-sm rounded-xl border border-neutral-300 dark:border-neutral-700 bg-[#FFF9F6] dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 font-mono focus:outline-none focus:ring-2 focus:ring-[#FD6F41]"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowNewPin(!showNewPin)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+                          >
+                            {showNewPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300 mb-1.5 font-['Archivo',sans-serif]">
+                          নতুন পিন নিশ্চিত করুন (Confirm New PIN) <span className="text-rose-500">*</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showConfirmPin ? 'text' : 'password'}
+                            required
+                            value={pinForm.confirmPin}
+                            onChange={(e) => setPinForm({ ...pinForm, confirmPin: e.target.value })}
+                            placeholder="নতুন পিনটি পুনরায় লিখুন"
+                            className="w-full px-4 py-2.5 pr-10 text-xs sm:text-sm rounded-xl border border-neutral-300 dark:border-neutral-700 bg-[#FFF9F6] dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 font-mono focus:outline-none focus:ring-2 focus:ring-[#FD6F41]"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowConfirmPin(!showConfirmPin)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+                          >
+                            {showConfirmPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="pt-2">
                         <button
-                          type="button"
-                          onClick={() => setShowCurrentPin(!showCurrentPin)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+                          type="submit"
+                          className="inline-flex items-center gap-2 px-6 py-2.5 text-xs sm:text-sm font-bold text-white bg-[#FD6F41] hover:bg-[#E55B2F] rounded-full shadow-md shadow-orange-500/20 transition-all cursor-pointer font-['Archivo',sans-serif]"
                         >
-                          {showCurrentPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          <KeyRound className="w-4 h-4" />
+                          <span>নতুন পিন সেভ করুন</span>
                         </button>
                       </div>
-                    </div>
+                    </form>
 
-                    <div>
-                      <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300 mb-1.5 font-['Archivo',sans-serif]">
-                        নতুন পছন্দমতো পিন (New PIN) <span className="text-rose-500">*</span>
-                      </label>
-                      <div className="relative">
-                        <input
-                          type={showNewPin ? 'text' : 'password'}
-                          required
-                          value={pinForm.newPin}
-                          onChange={(e) => setPinForm({ ...pinForm, newPin: e.target.value })}
-                          placeholder="কমপক্ষে ৪ সংখ্যার নতুন পিন (e.g. 7890)"
-                          className="w-full px-4 py-2.5 pr-10 text-xs sm:text-sm rounded-xl border border-neutral-300 dark:border-neutral-700 bg-[#FFF9F6] dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 font-mono focus:outline-none focus:ring-2 focus:ring-[#FD6F41]"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowNewPin(!showNewPin)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
-                        >
-                          {showNewPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
+                    {/* Master Recovery Key & OTP Security Settings */}
+                    <div className="p-6 rounded-2xl bg-white dark:bg-[#1E1B18] border border-neutral-200 dark:border-neutral-800 flex flex-col justify-between space-y-4">
+                      <div className="space-y-3">
+                        <h4 className="text-sm font-black text-[#111827] dark:text-white font-['Archivo',sans-serif] pb-2 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between">
+                          <span>২. পিন রিকভারি মাস্টার কী ও OTP সেটআপ</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950/60 text-[#FD6F41] font-bold">
+                            SHA-256 Encrypted
+                          </span>
+                        </h4>
+
+                        <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
+                          এখন আর কেউ ১-ক্লিকে পিন রিসেট করতে পারবে না! পিন ভুলে গেলে পিন রিসেট করার জন্য কেবল <strong>আপনার ইমেইল/ডাটাবেস ওটিপি (OTP)</strong> অথবা নিচের <strong>গোপন মাস্টার রিকভারি পাসওয়ার্ড</strong> ব্যবহৃত হবে।
+                        </p>
+
+                        <div className="p-3.5 rounded-xl bg-[#FFF9F6] dark:bg-neutral-900 border border-orange-100 dark:border-neutral-800 text-xs space-y-1.5">
+                          <p className="font-bold text-neutral-800 dark:text-neutral-200">
+                            ওটিপি (OTP) কোথায় যাবে?
+                          </p>
+                          <ul className="list-disc list-inside text-[11px] text-neutral-600 dark:text-neutral-400 space-y-1">
+                            <li>আপনার অ্যাডমিন ইমেইলে: <strong className="text-[#FD6F41]">{personalInfo.email || 'milondj5@gmail.com'}</strong></li>
+                            <li>আপনার ব্যক্তিগত <strong>Supabase Dashboard &rarr; Table Editor &rarr; admin_otp_requests</strong> টেবিলে (যেখানে শুধুমাত্র আপনি প্রবেশ করতে পারেন)।</li>
+                          </ul>
+                        </div>
+
+                        <form onSubmit={handleSaveMasterKey} className="space-y-3 pt-2">
+                          <div>
+                            <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300 mb-1.5">
+                              গোপন মাস্টার রিকভারি পাসওয়ার্ড সেট করুন {hasCustomMasterKey && <span className="text-emerald-600">(সক্রিয় আছে)</span>}
+                            </label>
+                            <div className="relative">
+                              <input
+                                type={showMasterKey ? 'text' : 'password'}
+                                required
+                                value={newMasterKey}
+                                onChange={(e) => setNewMasterKey(e.target.value)}
+                                placeholder="একটি গোপন রিকভারি শব্দ বা কোড লিখুন (কমপক্ষে ৬ অক্ষর)..."
+                                className="w-full px-4 py-2.5 pr-10 text-xs rounded-xl border border-neutral-300 dark:border-neutral-700 bg-[#FFF9F6] dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 font-mono focus:outline-none focus:ring-2 focus:ring-[#FD6F41]"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowMasterKey(!showMasterKey)}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+                              >
+                                {showMasterKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              </button>
+                            </div>
+                          </div>
+
+                          <button
+                            type="submit"
+                            className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-neutral-900 dark:bg-neutral-700 hover:bg-[#FD6F41] rounded-full transition-colors cursor-pointer font-['Archivo',sans-serif]"
+                          >
+                            <Save className="w-3.5 h-3.5" />
+                            <span>{hasCustomMasterKey ? 'মাস্টার রিকভারি কী আপডেট করুন' : 'মাস্টার রিকভারি কী সেভ করুন'}</span>
+                          </button>
+                        </form>
                       </div>
                     </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-neutral-800 dark:text-neutral-300 mb-1.5 font-['Archivo',sans-serif]">
-                        নতুন পিন নিশ্চিত করুন (Confirm New PIN) <span className="text-rose-500">*</span>
-                      </label>
-                      <div className="relative">
-                        <input
-                          type={showConfirmPin ? 'text' : 'password'}
-                          required
-                          value={pinForm.confirmPin}
-                          onChange={(e) => setPinForm({ ...pinForm, confirmPin: e.target.value })}
-                          placeholder="নতুন পিনটি পুনরায় লিখুন"
-                          className="w-full px-4 py-2.5 pr-10 text-xs sm:text-sm rounded-xl border border-neutral-300 dark:border-neutral-700 bg-[#FFF9F6] dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 font-mono focus:outline-none focus:ring-2 focus:ring-[#FD6F41]"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowConfirmPin(!showConfirmPin)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
-                        >
-                          {showConfirmPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="pt-2">
-                      <button
-                        type="submit"
-                        className="inline-flex items-center gap-2 px-6 py-2.5 text-xs sm:text-sm font-bold text-white bg-[#FD6F41] hover:bg-[#E55B2F] rounded-full shadow-md shadow-orange-500/20 transition-all cursor-pointer font-['Archivo',sans-serif]"
-                      >
-                        <KeyRound className="w-4 h-4" />
-                        <span>নতুন পিন সেভ করুন</span>
-                      </button>
-                    </div>
-                  </form>
+                  </div>
                 </div>
               )}
 

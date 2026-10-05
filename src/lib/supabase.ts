@@ -179,6 +179,7 @@ export async function uploadFileToSupabase(
 
 /**
  * Saves JSON settings into Supabase database (table: portfolio_settings)
+ * Merges with existing settings so partial updates never overwrite other keys.
  */
 export async function saveSettingsToSupabase(settings: Record<string, any>): Promise<{ success: boolean; error?: string }> {
   const client = getSupabaseClient();
@@ -187,11 +188,29 @@ export async function saveSettingsToSupabase(settings: Record<string, any>): Pro
   }
 
   try {
+    // Load existing data first so we merge instead of overwriting
+    let existingData: Record<string, any> = {};
+    try {
+      const { data: currentRow } = await client
+        .from('portfolio_settings')
+        .select('data')
+        .eq('id', 'main')
+        .single();
+      if (currentRow && currentRow.data && typeof currentRow.data === 'object') {
+        existingData = currentRow.data;
+      }
+    } catch (e) {}
+
+    const mergedData = {
+      ...existingData,
+      ...settings,
+    };
+
     const { error } = await client
       .from('portfolio_settings')
       .upsert({
         id: 'main',
-        data: settings,
+        data: mergedData,
         updated_at: new Date().toISOString(),
       });
 
@@ -226,6 +245,135 @@ export async function loadSettingsFromSupabase(): Promise<{ success: boolean; da
     return { success: true, data: data?.data };
   } catch (err: any) {
     return { success: false, error: err?.message || 'Load failed' };
+  }
+}
+
+/**
+ * Computes SHA-256 hash of a string (used for verifying Master Recovery Key or PIN without storing plain text)
+ */
+export async function sha256Hash(text: string): Promise<string> {
+  const clean = text.trim();
+  const encoder = new TextEncoder();
+  const data = encoder.encode(clean);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Sends a 6-digit OTP to the admin's verified email via Supabase Auth
+ */
+export async function sendAdminPinResetOtp(email: string): Promise<{ success: boolean; message: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, message: 'সুপাবেস ক্লাউড সংযোগ সক্রিয় নেই।' };
+  }
+
+  try {
+    const { error } = await client.auth.signInWithOtp({
+      email: email.trim(),
+      options: {
+        shouldCreateUser: true,
+      },
+    });
+
+    if (error) {
+      return { success: false, message: error.message };
+    }
+
+    return {
+      success: true,
+      message: `আপনার ইমেইলে (${email}) ভেরিফিকেশন ওটিপি (OTP) কোড পাঠানো হয়েছে! ইনবক্স ও স্প্যাম ফোল্ডার চেক করুন।`,
+    };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'ওটিপি পাঠাতে সমস্যা হয়েছে।' };
+  }
+}
+
+/**
+ * Verifies the 6-digit Email OTP code via Supabase Auth
+ */
+export async function verifyAdminPinResetOtp(email: string, token: string): Promise<{ success: boolean; message: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, message: 'সুপাবেস ক্লাউড সংযোগ সক্রিয় নেই।' };
+  }
+
+  const cleanEmail = email.trim();
+  const cleanToken = token.trim();
+
+  try {
+    // Try 'email' type first, fallback to 'signup' or 'magiclink' if user was newly created
+    let { error } = await client.auth.verifyOtp({
+      email: cleanEmail,
+      token: cleanToken,
+      type: 'email',
+    });
+
+    if (error) {
+      const retry = await client.auth.verifyOtp({
+        email: cleanEmail,
+        token: cleanToken,
+        type: 'signup',
+      });
+      error = retry.error;
+    }
+
+    if (error) {
+      return { success: false, message: 'ওটিপি কোডটি সঠিক নয় বা মেয়াদ শেষ হয়ে গেছে!' };
+    }
+
+    return { success: true, message: 'ওটিপি সফলভাবে যাচাই হয়েছে!' };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'ওটিপি যাচাই ব্যর্থ হয়েছে।' };
+  }
+}
+
+/**
+ * Generates and stores a one-time OTP directly inside the Supabase database `admin_otp_requests` table
+ * so the owner can view it inside their private Supabase Dashboard Table Editor -> `admin_otp_requests`
+ */
+export async function createDatabaseOtpChallenge(email: string): Promise<{ success: boolean; message: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, message: 'সুপাবেস সংযোগ পাওয়া যায়নি।' };
+  }
+
+  // Generate 6-digit random numeric OTP
+  const randomArray = new Uint32Array(1);
+  crypto.getRandomValues(randomArray);
+  const otpCode = String(100000 + (randomArray[0] % 900000));
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes validity
+  const otpHash = await sha256Hash(otpCode);
+
+  try {
+    // Store the plain OTP in `admin_otp_requests` table (if created by owner) AND store only the SHA-256 hash in settings
+    await saveSettingsToSupabase({
+      activeResetOtpHash: otpHash,
+      activeResetOtpExpires: expiresAt,
+    });
+
+    // Also try inserting into `admin_otp_requests` table so owner can see the 6-digit code in Supabase Table Editor
+    await client.from('admin_otp_requests').upsert({
+      id: 'latest_pin_reset_otp',
+      admin_email: email,
+      otp_code: otpCode,
+      expires_at: expiresAt,
+      created_at: new Date().toISOString(),
+    });
+
+    // Also trigger email OTP in parallel
+    await sendAdminPinResetOtp(email);
+
+    return {
+      success: true,
+      message: `ওটিপি জেনারেট হয়েছে! আপনার ইমেইল (${email}) চেক করুন অথবা আপনার Supabase ড্যাশবোর্ডের 'admin_otp_requests' টেবিল থেকে ৬-সংখ্যার ওটিপি কোডটি দেখুন।`,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: err?.message || 'ওটিপি রিকোয়েস্ট তৈরি করা যায়নি।',
+    };
   }
 }
 
@@ -270,7 +418,23 @@ create policy "Public Insert"
   on storage.objects for insert
   with check (bucket_id = 'portfolio_files');
 
-create policy "Public Update"
-  on storage.objects for update
-  using (bucket_id = 'portfolio_files');
+-- 3. Create a private table for Admin PIN Reset OTPs (Visible only in your Supabase Dashboard -> Table Editor)
+create table if not exists public.admin_otp_requests (
+  id text primary key,
+  admin_email text,
+  otp_code text not null,
+  expires_at timestamp with time zone not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table public.admin_otp_requests enable row level security;
+
+-- Allow website to insert/update new OTP requests, but DO NOT allow public SELECT (so only you can see the OTP in Supabase Dashboard!)
+create policy "Allow public insert on otp requests"
+  on public.admin_otp_requests for insert
+  with check (true);
+
+create policy "Allow public update on otp requests"
+  on public.admin_otp_requests for update
+  using (true);
 `;
