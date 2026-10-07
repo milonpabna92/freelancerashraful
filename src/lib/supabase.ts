@@ -178,6 +178,50 @@ export async function uploadFileToSupabase(
 }
 
 /**
+ * Deletes old profile photos from Supabase Storage bucket ('portfolio_files/photos')
+ * keeping only the active file if specified.
+ */
+export async function cleanupOldPhotosInSupabase(
+  keepFileNameOrUrl?: string,
+  bucketName = 'portfolio_files'
+): Promise<{ success: boolean; deletedCount: number; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, deletedCount: 0, error: 'Supabase client is not configured.' };
+  }
+
+  try {
+    const { data: files, error: listError } = await client.storage.from(bucketName).list('photos', {
+      limit: 100,
+    });
+
+    if (listError || !files) {
+      return { success: false, deletedCount: 0, error: listError?.message };
+    }
+
+    const pathsToDelete: string[] = [];
+    for (const fileObj of files) {
+      if (!fileObj.name || fileObj.name === '.emptyFolderPlaceholder') continue;
+      if (keepFileNameOrUrl && keepFileNameOrUrl.includes(fileObj.name)) {
+        continue;
+      }
+      pathsToDelete.push(`photos/${fileObj.name}`);
+    }
+
+    if (pathsToDelete.length > 0) {
+      const { error: removeError } = await client.storage.from(bucketName).remove(pathsToDelete);
+      if (removeError) {
+        return { success: false, deletedCount: 0, error: removeError.message };
+      }
+    }
+
+    return { success: true, deletedCount: pathsToDelete.length };
+  } catch (err: any) {
+    return { success: false, deletedCount: 0, error: err?.message || 'Cleanup failed' };
+  }
+}
+
+/**
  * Saves JSON settings into Supabase database (table: portfolio_settings)
  * Merges with existing settings so partial updates never overwrite other keys.
  */

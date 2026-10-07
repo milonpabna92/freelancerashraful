@@ -20,6 +20,7 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose }) => 
   const {
     personalInfo,
     customPhoto,
+    isPhotoReady,
     cvFileInfo,
     experiences,
     educationList,
@@ -86,7 +87,7 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose }) => 
     window.print();
   };
 
-  const activePhoto = customPhoto || '/user-photo.png';
+  const activePhoto = customPhoto || (isPhotoReady ? '/user-photo.png' : null);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-neutral-950/80 backdrop-blur-md overflow-y-auto">
@@ -199,11 +200,13 @@ export const ResumeModal: React.FC<ResumeModalProps> = ({ isOpen, onClose }) => 
                     className="relative w-32 h-32 mx-auto md:mx-0 rounded-lg overflow-hidden border-2 border-neutral-300 mb-4 bg-neutral-100 select-none"
                     title=""
                   >
-                    <img
-                      src={activePhoto}
-                      alt={personalInfo.name}
-                      className="w-full h-full object-cover"
-                    />
+                    {activePhoto && (
+                      <img
+                        src={activePhoto}
+                        alt={personalInfo.name}
+                        className="w-full h-full object-cover"
+                      />
+                    )}
                   </div>
                   <h1 className="text-2xl font-black tracking-tight text-neutral-900 uppercase font-['Archivo',sans-serif]">
                     {personalInfo.name}

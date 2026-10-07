@@ -18,11 +18,12 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
   const {
     personalInfo,
     customPhoto,
+    isPhotoReady,
     downloadCv,
     isDownloading,
   } = usePortfolioData();
 
-  const activePhoto = customPhoto || '/user-photo.png';
+  const activePhoto = customPhoto || (isPhotoReady ? '/user-photo.png' : null);
   const heroStats = personalInfo.heroStats && personalInfo.heroStats.length >= 3
     ? personalInfo.heroStats
     : [
@@ -109,12 +110,13 @@ export const Hero: React.FC<HeroProps> = ({ onOpenResume }) => {
                 className="relative w-[280px] sm:w-[340px] h-[350px] sm:h-[420px] rounded-t-full bg-gradient-to-t from-[#FD6F41] via-[#FD7E54] to-[#FFA07A] shadow-2xl shadow-orange-500/30 overflow-hidden flex items-end justify-center select-none"
                 title=""
               >
-                {/* User Cutout Photo with Black Suit, Glasses & Crossed Arms */}
-                <img
-                  src={activePhoto}
-                  alt={`${personalInfo.name} - ${personalInfo.role}`}
-                  className="relative z-10 w-full h-[105%] object-cover object-top hover:scale-105 transition-transform duration-500 ease-out"
-                />
+                {activePhoto && (
+                  <img
+                    src={activePhoto}
+                    alt={`${personalInfo.name} - ${personalInfo.role}`}
+                    className="relative z-10 w-full h-[105%] object-cover object-top hover:scale-105 transition-transform duration-500 ease-out"
+                  />
+                )}
               </div>
 
               {/* Quick floating trust badge */}

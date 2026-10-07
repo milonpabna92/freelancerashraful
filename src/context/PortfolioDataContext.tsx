@@ -20,7 +20,82 @@ import {
   ReferencePerson,
 } from '../types';
 import { getFile, setFile, deleteFile, triggerDownload } from '../utils/storage';
-import { getSupabaseConfig, uploadFileToSupabase, saveSettingsToSupabase, loadSettingsFromSupabase } from '../lib/supabase';
+import {
+  getSupabaseConfig,
+  uploadFileToSupabase,
+  cleanupOldPhotosInSupabase,
+  saveSettingsToSupabase,
+  loadSettingsFromSupabase,
+} from '../lib/supabase';
+
+/**
+ * Optimizes an image (File or Data URL or remote URL) into a crisp, lightweight WebP/PNG Data URL
+ * so it can be stored in localStorage (<250KB) for 0ms instant rendering without any flash.
+ */
+async function optimizeImageToDataUrl(source: File | string, maxDimension = 950): Promise<string> {
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        try {
+          let width = img.naturalWidth || img.width;
+          let height = img.naturalHeight || img.height;
+          if (width > maxDimension || height > maxDimension) {
+            if (width > height) {
+              height = Math.round((height * maxDimension) / width);
+              width = maxDimension;
+            } else {
+              width = Math.round((width * maxDimension) / height);
+              height = maxDimension;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(typeof source === 'string' ? source : '');
+            return;
+          }
+          ctx.clearRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+          // Use image/webp to preserve transparent cutout backgrounds while keeping size small (~80-180KB)
+          let dataUrl = canvas.toDataURL('image/webp', 0.88);
+          if (!dataUrl || dataUrl === 'data:,') {
+            dataUrl = canvas.toDataURL('image/png');
+          }
+          resolve(dataUrl);
+        } catch {
+          resolve(typeof source === 'string' ? source : '');
+        }
+      };
+      img.onerror = () => {
+        if (typeof source === 'string') {
+          resolve(source);
+        } else {
+          const reader = new FileReader();
+          reader.onload = () => resolve((reader.result as string) || '');
+          reader.onerror = () => resolve('');
+          reader.readAsDataURL(source);
+        }
+      };
+
+      if (typeof source === 'string') {
+        img.src = source;
+      } else {
+        const reader = new FileReader();
+        reader.onload = () => {
+          img.src = reader.result as string;
+        };
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(source);
+      }
+    } catch {
+      resolve(typeof source === 'string' ? source : '');
+    }
+  });
+}
 
 interface CvFileInfo {
   name: string;
@@ -33,6 +108,7 @@ interface CvFileInfo {
 interface PortfolioDataContextType {
   personalInfo: typeof defaultPersonalInfo;
   customPhoto: string | null;
+  isPhotoReady: boolean;
   cvFileInfo: CvFileInfo | null;
   projects: Project[];
   services: ServiceItem[];
@@ -46,6 +122,7 @@ interface PortfolioDataContextType {
   downloadCv: () => Promise<boolean>;
   uploadCvFile: (file: File) => Promise<{ success: boolean; error?: string }>;
   uploadPhotoFile: (file: File) => Promise<{ success: boolean; error?: string }>;
+  purgeOldPhotosAndSyncCurrent: () => Promise<{ success: boolean; message: string }>;
   uploadProjectImage: (file: File) => Promise<{ success: boolean; url?: string; error?: string }>;
   addProject: (project: Omit<Project, 'id'>) => Promise<{ success: boolean; project?: Project; error?: string }>;
   updateProject: (id: string, updated: Partial<Project>) => Promise<{ success: boolean; error?: string }>;
@@ -109,7 +186,20 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   });
 
-  const [customPhoto, setCustomPhoto] = useState<string | null>(null);
+  const [customPhoto, setCustomPhoto] = useState<string | null>(() => {
+    try {
+      const cached = localStorage.getItem('ashraful_custom_photo');
+      if (cached) return cached;
+    } catch (e) {}
+    return null;
+  });
+  const [isPhotoReady, setIsPhotoReady] = useState<boolean>(() => {
+    try {
+      return Boolean(localStorage.getItem('ashraful_custom_photo'));
+    } catch (e) {
+      return false;
+    }
+  });
   const [cvFileInfo, setCvFileInfo] = useState<CvFileInfo | null>(null);
   const [projects, setProjects] = useState<Project[]>(() => {
     try {
@@ -208,15 +298,35 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
     let mounted = true;
 
     async function loadData() {
-      // 1. Load Photo
-      const photoDoc = await getFile(PHOTO_STORAGE_KEY);
-      if (photoDoc && mounted) {
-        setCustomPhoto(photoDoc.base64);
-      } else {
-        const legacyPhoto = localStorage.getItem('ashraful_custom_photo');
-        if (legacyPhoto && mounted) {
-          setCustomPhoto(legacyPhoto);
+      let localPhoto: string | null = null;
+      let localPhotoUpdatedAt = 0;
+
+      // 1. Load Photo from IndexedDB / LocalStorage
+      try {
+        const photoDoc = await getFile(PHOTO_STORAGE_KEY);
+        if (photoDoc && photoDoc.base64) {
+          localPhoto = photoDoc.base64;
+          localPhotoUpdatedAt = photoDoc.updatedAt ? new Date(photoDoc.updatedAt).getTime() : 0;
+        } else {
+          const legacyPhoto = localStorage.getItem('ashraful_custom_photo');
+          if (legacyPhoto) {
+            localPhoto = legacyPhoto;
+          }
         }
+      } catch (e) {}
+
+      // If we already have a local photo and no Supabase override is pending, show it right away
+      if (localPhoto && mounted) {
+        setCustomPhoto(localPhoto);
+        // Ensure localStorage has a compact cached copy so next reload is 0ms instant
+        try {
+          if (!localStorage.getItem('ashraful_custom_photo')) {
+            const compact = await optimizeImageToDataUrl(localPhoto, 950);
+            if (compact) {
+              localStorage.setItem('ashraful_custom_photo', compact);
+            }
+          }
+        } catch (e) {}
       }
 
       // 2. Load CV File Info
@@ -278,7 +388,43 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
               } catch (e) {}
             }
             if (data.photoUrl) {
-              setCustomPhoto(data.photoUrl);
+              const remoteUpdatedAt = data.photoUpdatedAt ? new Date(data.photoUpdatedAt).getTime() : 0;
+              // Use Supabase photo if we don't have a newer local upload
+              if (!localPhoto || remoteUpdatedAt >= localPhotoUpdatedAt) {
+                setCustomPhoto(data.photoUrl);
+                // Convert/cache in localStorage & IndexedDB so future loads are 0ms instant without flashing
+                optimizeImageToDataUrl(data.photoUrl, 950).then(async (compact) => {
+                  const toStore = compact || data.photoUrl;
+                  try {
+                    localStorage.setItem('ashraful_custom_photo', toStore);
+                  } catch (e) {}
+                  try {
+                    await setFile(PHOTO_STORAGE_KEY, {
+                      name: 'profile_photo.webp',
+                      type: 'image/webp',
+                      size: toStore.length,
+                      updatedAt: data.photoUpdatedAt || new Date().toISOString(),
+                      base64: toStore,
+                    });
+                  } catch (e) {}
+                });
+              } else if (localPhoto && localPhotoUpdatedAt > remoteUpdatedAt) {
+                // Local photo is newer than Supabase's old photo -> auto-update Supabase with the newer local photo!
+                optimizeImageToDataUrl(localPhoto, 950).then(async (compact) => {
+                  await saveSettingsToSupabase({
+                    photoUrl: compact || localPhoto,
+                    photoUpdatedAt: new Date(localPhotoUpdatedAt).toISOString(),
+                  });
+                });
+              }
+            } else if (localPhoto) {
+              // Supabase has no photoUrl yet, but local browser has user's uploaded photo -> sync to Supabase
+              optimizeImageToDataUrl(localPhoto, 950).then(async (compact) => {
+                await saveSettingsToSupabase({
+                  photoUrl: compact || localPhoto,
+                  photoUpdatedAt: new Date(localPhotoUpdatedAt || Date.now()).toISOString(),
+                });
+              });
             }
             if (data.cvUrl) {
               setCvFileInfo({
@@ -324,6 +470,10 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       } catch (err) {
         console.warn('Supabase optional sync skipped:', err);
+      } finally {
+        if (mounted) {
+          setIsPhotoReady(true);
+        }
       }
     }
 
@@ -428,7 +578,7 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   /**
-   * Upload and save custom photo
+   * Upload and save custom photo (with instant localStorage caching + old Supabase file cleanup)
    */
   const uploadPhotoFile = async (file: File): Promise<{ success: boolean; error?: string }> => {
     if (!file) return { success: false, error: 'No file provided' };
@@ -437,40 +587,116 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     try {
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = (err) => reject(err);
-      });
-      reader.readAsDataURL(file);
-      const base64Data = await base64Promise;
+      const nowIso = new Date().toISOString();
+      const optimizedBase64 = await optimizeImageToDataUrl(file, 950);
+      if (!optimizedBase64) {
+        return { success: false, error: 'ছবি প্রসেস করতে ব্যর্থ হয়েছে।' };
+      }
 
       await setFile(PHOTO_STORAGE_KEY, {
         name: file.name,
-        type: file.type || 'image/png',
-        size: file.size,
-        updatedAt: new Date().toISOString(),
-        base64: base64Data,
+        type: 'image/webp',
+        size: optimizedBase64.length,
+        updatedAt: nowIso,
+        base64: optimizedBase64,
       });
 
       try {
-        localStorage.setItem('ashraful_custom_photo', base64Data);
+        localStorage.setItem('ashraful_custom_photo', optimizedBase64);
       } catch (e) {}
+
+      setCustomPhoto(optimizedBase64);
+      setIsPhotoReady(true);
 
       const supabaseConfig = getSupabaseConfig();
       if (supabaseConfig.connected) {
-        const remoteRes = await uploadFileToSupabase(file, `photos/${Date.now()}_${file.name}`);
+        const cleanExt = file.name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'png';
+        const storagePath = `photos/profile_${Date.now()}.${cleanExt}`;
+        const remoteRes = await uploadFileToSupabase(file, storagePath);
+
         if (remoteRes.success && remoteRes.publicUrl) {
-          await saveSettingsToSupabase({ photoUrl: remoteRes.publicUrl });
+          await cleanupOldPhotosInSupabase(remoteRes.publicUrl);
+          await saveSettingsToSupabase({
+            photoUrl: optimizedBase64,
+            photoStorageUrl: remoteRes.publicUrl,
+            photoUpdatedAt: nowIso,
+          });
+        } else {
+          await saveSettingsToSupabase({
+            photoUrl: optimizedBase64,
+            photoUpdatedAt: nowIso,
+          });
         }
       }
 
-      setCustomPhoto(base64Data);
       window.dispatchEvent(new Event('portfolioDataUpdated'));
       return { success: true };
     } catch (err: any) {
       console.error('Failed to save photo:', err);
       return { success: false, error: err?.message || 'Failed to save photo.' };
+    }
+  };
+
+  /**
+   * Purges any old profile photos from Supabase Storage & locks the currently active photo
+   * into LocalStorage, IndexedDB, and Supabase Database for 0ms instant loading.
+   */
+  const purgeOldPhotosAndSyncCurrent = async (): Promise<{ success: boolean; message: string }> => {
+    try {
+      const current = customPhoto;
+      if (!current) {
+        return {
+          success: false,
+          message: 'বর্তমানে কোনো কাস্টম ছবি আপলোড করা নেই। প্রথমে নতুন ছবি আপলোড করুন।',
+        };
+      }
+
+      const nowIso = new Date().toISOString();
+      const compactDataUrl = await optimizeImageToDataUrl(current, 950);
+      const finalPhoto = compactDataUrl || current;
+
+      // 1. Save to LocalStorage (for 0ms synchronous startup)
+      try {
+        localStorage.setItem('ashraful_custom_photo', finalPhoto);
+      } catch (e) {}
+
+      // 2. Save to IndexedDB
+      await setFile(PHOTO_STORAGE_KEY, {
+        name: 'profile_photo.webp',
+        type: 'image/webp',
+        size: finalPhoto.length,
+        updatedAt: nowIso,
+        base64: finalPhoto,
+      });
+
+      setCustomPhoto(finalPhoto);
+      setIsPhotoReady(true);
+
+      // 3. Clean up old files in Supabase Storage & overwrite photoUrl in Supabase Database
+      const supabaseConfig = getSupabaseConfig();
+      if (supabaseConfig.connected) {
+        await cleanupOldPhotosInSupabase();
+        const saveRes = await saveSettingsToSupabase({
+          photoUrl: finalPhoto,
+          photoUpdatedAt: nowIso,
+        });
+        if (!saveRes.success) {
+          return {
+            success: false,
+            message: `লোকাল ক্যাশ আপডেট হয়েছে, কিন্তু সুপাবেসে সেভ করতে সমস্যা হয়েছে: ${saveRes.error}`,
+          };
+        }
+      }
+
+      return {
+        success: true,
+        message: 'পুরাতন ছবির সমস্ত ক্যাশ ও ডাটা মুছে ফেলা হয়েছে! এখন সাইট লোড দিলেই সরাসরি আপনার এই ছবিটি আসবে।',
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err?.message || 'পুরাতন ডাটা পরিষ্কার করতে সমস্যা হয়েছে।',
+      };
     }
   };
 
@@ -859,7 +1085,11 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
         referencePerson,
         updatedAt: new Date().toISOString(),
       };
-      if (customPhoto) payload.photoUrl = customPhoto;
+      if (customPhoto) {
+        const compact = await optimizeImageToDataUrl(customPhoto, 950);
+        payload.photoUrl = compact || customPhoto;
+        payload.photoUpdatedAt = new Date().toISOString();
+      }
       if (cvFileInfo?.publicUrl) payload.cvUrl = cvFileInfo.publicUrl;
 
       const res = await saveSettingsToSupabase(payload);
@@ -878,6 +1108,7 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
       value={{
         personalInfo,
         customPhoto,
+        isPhotoReady,
         cvFileInfo,
         projects,
         services,
@@ -891,6 +1122,7 @@ export const PortfolioDataProvider: React.FC<{ children: React.ReactNode }> = ({
         downloadCv,
         uploadCvFile,
         uploadPhotoFile,
+        purgeOldPhotosAndSyncCurrent,
         uploadProjectImage,
         addProject,
         updateProject,

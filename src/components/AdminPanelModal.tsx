@@ -63,6 +63,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
     downloadCv,
     uploadCvFile,
     uploadPhotoFile,
+    purgeOldPhotosAndSyncCurrent,
     uploadProjectImage,
     addProject,
     updateProject,
@@ -1707,11 +1708,28 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({ isOpen, onClos
 
                         {customPhoto && (
                           <button
+                            onClick={async () => {
+                              setUploadStatus({ type: 'loading', message: 'সুপাবেস ও ব্রাউজারের পুরাতন ক্যাশ পরিষ্কার করে বর্তমান ছবিটি স্থায়ী করা হচ্ছে...' });
+                              const res = await purgeOldPhotosAndSyncCurrent();
+                              setUploadStatus({
+                                type: res.success ? 'success' : 'error',
+                                message: res.message,
+                              });
+                            }}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 rounded-full transition-colors cursor-pointer font-['Archivo',sans-serif]"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>পুরাতন ছবি মুছে বর্তমান ছবিটি স্থায়ী করুন</span>
+                          </button>
+                        )}
+
+                        {customPhoto && (
+                          <button
                             onClick={resetPhoto}
                             className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-full transition-colors cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
-                            <span>রিসেট</span>
+                            <span>ডিফল্ট ছবিতে রিসেট</span>
                           </button>
                         )}
                       </div>
